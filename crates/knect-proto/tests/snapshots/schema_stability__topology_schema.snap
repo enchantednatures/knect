@@ -1,0 +1,437 @@
+---
+source: crates/knect-proto/tests/schema_stability.rs
+expression: encoded
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Topology",
+  "description": "The full graph projection.",
+  "type": "object",
+  "properties": {
+    "context": {
+      "description": "Kubernetes context name.",
+      "type": "string"
+    },
+    "edges": {
+      "description": "Resource relationships.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Edge"
+      }
+    },
+    "generation": {
+      "description": "Monotonic graph generation.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "nodes": {
+      "description": "Resource vertices.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ResourceNode"
+      }
+    },
+    "schema_version": {
+      "description": "Protocol schema version. See [`crate::SCHEMA_VERSION`].",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "stats": {
+      "description": "Aggregate statistics.",
+      "$ref": "#/$defs/TopologyStats"
+    },
+    "warnings": {
+      "description": "Non-fatal graph warnings.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Warning"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "context",
+    "generation",
+    "stats"
+  ],
+  "$defs": {
+    "Badge": {
+      "description": "A short, attributable marker rendered next to a node.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "description": "Display text, for example `scale-to-zero`.",
+          "type": "string"
+        },
+        "severity": {
+          "description": "Severity used by clients to choose a colour.",
+          "$ref": "#/$defs/Severity",
+          "default": "info"
+        },
+        "tooltip": {
+          "description": "Optional hover text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "label"
+      ]
+    },
+    "CategoryCount": {
+      "description": "Count of nodes in one category.",
+      "type": "object",
+      "properties": {
+        "category": {
+          "description": "Category being counted.",
+          "$ref": "#/$defs/NodeCategory"
+        },
+        "count": {
+          "description": "Number of nodes in the category.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "category",
+        "count"
+      ]
+    },
+    "Edge": {
+      "description": "A directed relationship between two resources.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Source resource.",
+          "$ref": "#/$defs/ResourceId"
+        },
+        "health": {
+          "description": "Health of the relationship.",
+          "$ref": "#/$defs/Health"
+        },
+        "id": {
+          "description": "Stable edge ID, unique within a topology generation.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Semantic relationship.",
+          "$ref": "#/$defs/EdgeKind"
+        },
+        "label": {
+          "description": "Optional display label.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "metadata": {
+          "description": "Deterministic, redacted edge-specific metadata.",
+          "type": "object",
+          "additionalProperties": true,
+          "default": {}
+        },
+        "to": {
+          "description": "Target resource.",
+          "$ref": "#/$defs/ResourceId"
+        },
+        "warnings": {
+          "description": "Problems affecting this relationship.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Warning"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "to",
+        "kind",
+        "health"
+      ]
+    },
+    "EdgeKind": {
+      "description": "Semantic relationship between two resources.",
+      "type": "string",
+      "enum": [
+        "routes_to",
+        "owns",
+        "scales",
+        "runs",
+        "subscribes",
+        "delivers_to",
+        "dead_letter_sink",
+        "uses_secret",
+        "uses_config_map",
+        "connects_to",
+        "backed_by",
+        "mounts",
+        "provisioned_by",
+        "protected_by",
+        "mutated_by",
+        "manages",
+        "references",
+        "targets",
+        "published_by",
+        "consumes_from",
+        "selects",
+        "unknown"
+      ]
+    },
+    "Health": {
+      "description": "Roll-up health state for a node, edge, or the whole topology.",
+      "type": "string",
+      "enum": [
+        "healthy",
+        "degraded",
+        "progressing",
+        "blocked",
+        "unknown"
+      ]
+    },
+    "NodeCategory": {
+      "description": "High-level category used to group resources in the UI and stats.",
+      "type": "string",
+      "enum": [
+        "k_service",
+        "route",
+        "configuration",
+        "revision",
+        "pod_autoscaler",
+        "broker",
+        "trigger",
+        "source",
+        "sink_binding",
+        "subscription",
+        "channel",
+        "deployment",
+        "replica_set",
+        "pod",
+        "service",
+        "endpoints",
+        "backing_service",
+        "topic",
+        "storage_class",
+        "persistent_volume",
+        "persistent_volume_claim",
+        "ceph_pool",
+        "policy",
+        "canary",
+        "virtual_service",
+        "destination_rule",
+        "peer_authentication",
+        "authorization_policy",
+        "config_map",
+        "secret",
+        "namespace",
+        "unknown"
+      ]
+    },
+    "ResourceId": {
+      "description": "The canonical identity of a Kubernetes object.\n\nNode IDs in the topology are `ResourceId` values. The Kubernetes UID is\ndeliberately not part of the identity so a recreated object keeps its graph\nposition; the UID is carried separately in [`crate::graph::ResourceNode`].",
+      "type": "object",
+      "properties": {
+        "api_version": {
+          "description": "Kubernetes `apiVersion`, for example `serving.knative.dev/v1`.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Resource kind, for example `Service`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Object name.",
+          "type": "string"
+        },
+        "namespace": {
+          "description": "Namespace, or `None` for cluster-scoped resources.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "api_version",
+        "kind",
+        "name"
+      ]
+    },
+    "ResourceNode": {
+      "description": "A resource vertex in the topology.",
+      "type": "object",
+      "properties": {
+        "annotations": {
+          "description": "Sanitized annotations.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "badges": {
+          "description": "UI badges.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Badge"
+          }
+        },
+        "category": {
+          "description": "UI grouping category.",
+          "$ref": "#/$defs/NodeCategory"
+        },
+        "first_seen": {
+          "description": "First time the object was observed by this daemon.",
+          "type": "string"
+        },
+        "health": {
+          "description": "Current health.",
+          "$ref": "#/$defs/Health"
+        },
+        "id": {
+          "description": "Canonical resource identity.",
+          "$ref": "#/$defs/ResourceId"
+        },
+        "labels": {
+          "description": "Sanitized labels.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "last_seen": {
+          "description": "Most recent time the object was observed.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Object name; duplicated from `id` for convenient rendering.",
+          "type": "string"
+        },
+        "namespace": {
+          "description": "Namespace, or `None` for cluster-scoped resources.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary": {
+          "description": "One-line description generated by the correlators.",
+          "type": "string"
+        },
+        "uid": {
+          "description": "Kubernetes UID, when observed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "category",
+        "name",
+        "health",
+        "summary",
+        "first_seen",
+        "last_seen"
+      ]
+    },
+    "Severity": {
+      "description": "Severity shared by warnings, badges, and policy records.",
+      "type": "string",
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "info",
+        "unknown"
+      ]
+    },
+    "TopologyStats": {
+      "description": "Aggregate topology statistics.",
+      "type": "object",
+      "properties": {
+        "categories": {
+          "description": "Per-category node counts, sorted deterministically.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CategoryCount"
+          }
+        },
+        "edge_count": {
+          "description": "Number of edges.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        },
+        "node_count": {
+          "description": "Number of nodes.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        },
+        "truncated": {
+          "description": "True when the graph was truncated by the watch limits.",
+          "type": "boolean",
+          "default": false
+        },
+        "warning_count": {
+          "description": "Number of warnings.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        }
+      }
+    },
+    "Warning": {
+      "description": "A non-fatal problem detected while building or correlating the graph.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "description": "Stable machine-readable warning code.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable explanation with any secret values removed.",
+          "type": "string"
+        },
+        "resource": {
+          "description": "Resource the warning belongs to, when known.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResourceId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "severity": {
+          "description": "Severity used by clients to choose a colour.",
+          "$ref": "#/$defs/Severity",
+          "default": "info"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    }
+  }
+}

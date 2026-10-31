@@ -1,0 +1,163 @@
+{
+  "id": {
+    "api_version": "serving.knative.dev/v1",
+    "kind": "Revision",
+    "namespace": "default",
+    "name": "hello-00001"
+  },
+  "category": "revision",
+  "name": "hello-00001",
+  "namespace": "default",
+  "health": "healthy",
+  "summary": "Revision hello-00001 ready=1",
+  "yaml": "apiVersion: serving.knative.dev/v1\nkind: Revision\nmetadata:\n  name: hello-00001\n  namespace: default\nspec:\n  containers:\n    - name: user-container\n      image: ghcr.io/example/hello:1.0.0\n      env:\n        - name: REDIS_URL\n          value: \"[REDACTED]\"\n",
+  "yaml_redacted": true,
+  "mutations": [
+    {
+      "manager": "knative-serving-controller",
+      "manager_kind": "knative",
+      "operation": "update",
+      "subresource": null,
+      "time": "2026-10-31T12:01:00Z",
+      "paths": [
+        {
+          "path": "/spec/containers/0/resources/requests/cpu",
+          "yaml_line": 14,
+          "yaml_column": 11,
+          "value_preview": "100m"
+        },
+        {
+          "path": "/spec/timeoutSeconds",
+          "yaml_line": 15,
+          "yaml_column": 3,
+          "value_preview": "300"
+        }
+      ]
+    }
+  ],
+  "policies": [
+    {
+      "id": "kyverno-require-labels-hello-00001",
+      "name": "require-labels",
+      "namespace": null,
+      "kind": "kyverno",
+      "resource": {
+        "api_version": "serving.knative.dev/v1",
+        "kind": "Revision",
+        "namespace": "default",
+        "name": "hello-00001"
+      },
+      "severity": "medium",
+      "result": "warn",
+      "message": "Revision is missing the owner label required by policy",
+      "observed_at": "2026-10-31T12:04:30Z",
+      "details": {
+        "rule": "check-owner-label",
+        "remediation": "add label app.kubernetes.io/owner"
+      }
+    }
+  ],
+  "links": [
+    {
+      "source": {
+        "api_version": "serving.knative.dev/v1",
+        "kind": "Revision",
+        "namespace": "default",
+        "name": "hello-00001"
+      },
+      "target": {
+        "api_version": "apps/v1",
+        "kind": "Deployment",
+        "namespace": "default",
+        "name": "redis-master"
+      },
+      "via": "secret",
+      "confidence": 0.86,
+      "evidence": [
+        {
+          "kind": "secret_key",
+          "description": "Secret key referenced by envFrom",
+          "path": "/spec/containers/0/env/0/valueFrom/secretKeyRef/name",
+          "value_redacted": "[REDACTED]"
+        }
+      ],
+      "health": "healthy"
+    }
+  ],
+  "storage": [
+    {
+      "pvc": {
+        "api_version": "v1",
+        "kind": "PersistentVolumeClaim",
+        "namespace": "default",
+        "name": "redis-data"
+      },
+      "volume": "redis-data",
+      "storage_class": "ceph-rbd",
+      "access_modes": [
+        "read_write_once"
+      ],
+      "capacity": "20Gi",
+      "phase": "Bound",
+      "mounted_by": [
+        {
+          "api_version": "serving.knative.dev/v1",
+          "kind": "Revision",
+          "namespace": "default",
+          "name": "hello-00001"
+        }
+      ],
+      "provisioned_by": {
+        "api_version": "storage.k8s.io/v1",
+        "kind": "StorageClass",
+        "namespace": null,
+        "name": "ceph-rbd"
+      },
+      "backend": {
+        "api_version": "ceph.rook.io/v1",
+        "kind": "CephBlockPool",
+        "namespace": "rook-ceph",
+        "name": "replicated"
+      },
+      "warnings": [
+        {
+          "code": "rwo_multi_mount",
+          "message": "ReadWriteOnce claim is mounted by more than one replica",
+          "severity": "high",
+          "conflict": {
+            "pvc": {
+              "api_version": "v1",
+              "kind": "PersistentVolumeClaim",
+              "namespace": "default",
+              "name": "redis-data"
+            },
+            "access_mode": "read_write_once",
+            "max_scale": 2,
+            "reason": "RWO volumes cannot be attached to multiple nodes",
+            "affected": [
+              {
+                "api_version": "serving.knative.dev/v1",
+                "kind": "Revision",
+                "namespace": "default",
+                "name": "hello-00001"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "metrics": {
+    "cpu_millicores": 12.5,
+    "memory_bytes": 67108864,
+    "replicas": 1,
+    "ready_replicas": 1,
+    "requests_per_second": 23.4,
+    "error_rate": 0.001,
+    "p95_latency_ms": 41.2,
+    "window_secs": 300,
+    "source": "kubernetes-metrics"
+  },
+  "logs": []
+}

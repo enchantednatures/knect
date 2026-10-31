@@ -1,0 +1,37 @@
+{
+  "resource": {
+    "api_version": "serving.knative.dev/v1",
+    "kind": "Service",
+    "namespace": "default",
+    "name": "hello"
+  },
+  "user_intent": "apiVersion: serving.knative.dev/v1\nkind: Service\nmetadata:\n  name: hello\nspec:\n  template:\n    spec:\n      containers:\n        - image: ghcr.io/example/hello:1.0.0\n",
+  "knative_defaults": "apiVersion: serving.knative.dev/v1\nkind: Service\nmetadata:\n  name: hello\nspec:\n  template:\n    metadata:\n      annotations:\n        autoscaling.knative.dev/min-scale: \"0\"\n    spec:\n      timeoutSeconds: 300\n      containers:\n        - image: ghcr.io/example/hello:1.0.0\n          resources:\n            requests:\n              cpu: 100m\n",
+  "policy_mutators": "apiVersion: serving.knative.dev/v1\nkind: Service\nmetadata:\n  name: hello\n  labels:\n    app.kubernetes.io/part-of: orders\nspec:\n  template:\n    metadata:\n      annotations:\n        sidecar.istio.io/inject: \"true\"\n    spec:\n      containers:\n        - image: ghcr.io/example/hello:1.0.0\n",
+  "lines": [
+    {
+      "line_number": 8,
+      "side": "user_intent",
+      "owner": "kubectl-client-side-apply",
+      "text": "        - image: ghcr.io/example/hello:1.0.0",
+      "changed": false,
+      "path": "/spec/template/spec/containers/0/image"
+    },
+    {
+      "line_number": 12,
+      "side": "knative_defaults",
+      "owner": "knative-serving-controller",
+      "text": "              cpu: 100m",
+      "changed": true,
+      "path": "/spec/template/spec/containers/0/resources/requests/cpu"
+    },
+    {
+      "line_number": 6,
+      "side": "policy_mutators",
+      "owner": "istio-sidecar-injector",
+      "text": "        sidecar.istio.io/inject: \"true\"",
+      "changed": true,
+      "path": "/spec/template/metadata/annotations/sidecar.istio.io~1inject"
+    }
+  ]
+}

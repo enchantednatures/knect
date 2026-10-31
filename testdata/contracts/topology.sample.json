@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "context": "kind-knect-e2e",
+  "generation": 42,
+  "nodes": [
+    {
+      "id": {
+        "api_version": "serving.knative.dev/v1",
+        "kind": "Service",
+        "namespace": "default",
+        "name": "hello"
+      },
+      "category": "k_service",
+      "name": "hello",
+      "namespace": "default",
+      "health": "healthy",
+      "summary": "Knative Service serving hello.default.example.com",
+      "labels": {
+        "app": "hello",
+        "serving.knative.dev/configuration": "hello"
+      },
+      "annotations": {
+        "knect.dev/source": "contract-fixture"
+      },
+      "badges": [
+        {
+          "label": "scale-to-zero",
+          "severity": "info",
+          "tooltip": "Replicas can drop to zero when idle"
+        }
+      ],
+      "uid": "0b6d2b52-0f8a-4f6c-9d5e-1b3c8f0a1111",
+      "first_seen": "2026-10-31T12:00:00Z",
+      "last_seen": "2026-10-31T12:05:00Z"
+    },
+    {
+      "id": {
+        "api_version": "serving.knative.dev/v1",
+        "kind": "Revision",
+        "namespace": "default",
+        "name": "hello-00001"
+      },
+      "category": "revision",
+      "name": "hello-00001",
+      "namespace": "default",
+      "health": "healthy",
+      "summary": "Revision hello-00001 ready=1",
+      "labels": {
+        "serving.knative.dev/configuration": "hello",
+        "serving.knative.dev/revision": "hello-00001"
+      },
+      "annotations": {},
+      "badges": [
+        {
+          "label": "ready",
+          "severity": "info",
+          "tooltip": null
+        }
+      ],
+      "uid": "1c7e3c63-1f9b-4a7d-8e6f-2c4d9a1b2222",
+      "first_seen": "2026-10-31T12:00:00Z",
+      "last_seen": "2026-10-31T12:05:00Z"
+    },
+    {
+      "id": {
+        "api_version": "eventing.knative.dev/v1",
+        "kind": "Broker",
+        "namespace": "default",
+        "name": "orders"
+      },
+      "category": "broker",
+      "name": "orders",
+      "namespace": "default",
+      "health": "healthy",
+      "summary": "Broker orders using MTChannelBasedBroker",
+      "labels": {
+        "eventing.knative.dev/broker.class": "MTChannelBasedBroker"
+      },
+      "annotations": {},
+      "badges": [],
+      "uid": "2d8f4d74-2a0c-4b8e-9f70-3d5e0b2c3333",
+      "first_seen": "2026-10-31T12:00:00Z",
+      "last_seen": "2026-10-31T12:05:00Z"
+    },
+    {
+      "id": {
+        "api_version": "eventing.knative.dev/v1",
+        "kind": "Trigger",
+        "namespace": "default",
+        "name": "orders-to-hello"
+      },
+      "category": "trigger",
+      "name": "orders-to-hello",
+      "namespace": "default",
+      "health": "degraded",
+      "summary": "Trigger orders-to-hello delivers order.created events",
+      "labels": {
+        "knect.dev/route": "hello"
+      },
+      "annotations": {},
+      "badges": [
+        {
+          "label": "dead-letter",
+          "severity": "medium",
+          "tooltip": "Dead-letter sink configured"
+        }
+      ],
+      "uid": "3e9a5e85-3b1d-4c9f-a081-4e6f1c3d4444",
+      "first_seen": "2026-10-31T12:00:00Z",
+      "last_seen": "2026-10-31T12:05:00Z"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-kservice-revision",
+      "from": {
+        "api_version": "serving.knative.dev/v1",
+        "kind": "Service",
+        "namespace": "default",
+        "name": "hello"
+      },
+      "to": {
+        "api_version": "serving.knative.dev/v1",
+        "kind": "Revision",
+        "namespace": "default",
+        "name": "hello-00001"
+      },
+      "kind": "owns",
+      "label": null,
+      "health": "healthy",
+      "warnings": [],
+      "metadata": {
+        "route": "hello"
+      }
+    },
+    {
+      "id": "edge-trigger-broker",
+      "from": {
+        "api_version": "eventing.knative.dev/v1",
+        "kind": "Trigger",
+        "namespace": "default",
+        "name": "orders-to-hello"
+      },
+      "to": {
+        "api_version": "eventing.knative.dev/v1",
+        "kind": "Broker",
+        "namespace": "default",
+        "name": "orders"
+      },
+      "kind": "subscribes",
+      "label": "order.created",
+      "health": "healthy",
+      "warnings": [],
+      "metadata": {
+        "filter": "type=order.created"
+      }
+    },
+    {
+      "id": "edge-trigger-service",
+      "from": {
+        "api_version": "eventing.knative.dev/v1",
+        "kind": "Trigger",
+        "namespace": "default",
+        "name": "orders-to-hello"
+      },
+      "to": {
+        "api_version": "serving.knative.dev/v1",
+        "kind": "Service",
+        "namespace": "default",
+        "name": "hello"
+      },
+      "kind": "delivers_to",
+      "label": null,
+      "health": "degraded",
+      "warnings": [
+        {
+          "code": "subscriber_not_ready",
+          "message": "Subscriber reports 0 of 1 ready replicas",
+          "severity": "medium",
+          "resource": {
+            "api_version": "serving.knative.dev/v1",
+            "kind": "Service",
+            "namespace": "default",
+            "name": "hello"
+          }
+        }
+      ],
+      "metadata": {}
+    }
+  ],
+  "warnings": [],
+  "stats": {
+    "node_count": 4,
+    "edge_count": 3,
+    "warning_count": 0,
+    "categories": [
+      {
+        "category": "broker",
+        "count": 1
+      },
+      {
+        "category": "k_service",
+        "count": 1
+      },
+      {
+        "category": "revision",
+        "count": 1
+      },
+      {
+        "category": "trigger",
+        "count": 1
+      }
+    ],
+    "truncated": false
+  }
+}

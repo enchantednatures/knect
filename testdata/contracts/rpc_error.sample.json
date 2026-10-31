@@ -1,0 +1,19 @@
+{
+  "jsonrpc": "2.0",
+  "id": "req-7",
+  "result": null,
+  "error": {
+    "code": -32001,
+    "message": "resource not found",
+    "data": {
+      "retryable": false,
+      "details": "Revision orders-v2 is not present in the current graph",
+      "resource": {
+        "api_version": "serving.knative.dev/v1",
+        "kind": "Revision",
+        "namespace": "orders",
+        "name": "orders-v2"
+      }
+    }
+  }
+}

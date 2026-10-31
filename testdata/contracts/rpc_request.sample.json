@@ -1,0 +1,15 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "graph.get_topology",
+  "params": {
+    "context": "kind-knect-e2e",
+    "min_generation": 42,
+    "include": [
+      "nodes",
+      "edges",
+      "warnings",
+      "stats"
+    ]
+  }
+}
