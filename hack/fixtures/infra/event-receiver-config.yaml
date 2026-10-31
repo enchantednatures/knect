@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: event-receiver-config
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: eventing
+data:
+  default.conf: |
+    # Minimal CloudEvent sink for E2E fixtures.
+    #
+    # Knative's broker filter requires a subscriber to return either an empty
+    # 2xx response or a valid CloudEvent. A static nginx server returns 405 for
+    # POST, and an echo server returns a non-CloudEvent JSON body; both cause
+    # the broker to retry. Returning 204 acknowledges the event cleanly.
+    server {
+      listen 8080;
+      server_name _;
+
+      access_log /dev/stdout;
+
+      location / {
+        client_body_buffer_size 1m;
+        client_max_body_size 1m;
+        return 204;
+      }
+    }
