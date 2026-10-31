@@ -1,0 +1,19 @@
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Topic
+metadata:
+  name: knect-orders
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: operators-redpanda
+spec:
+  cluster:
+    clusterRef:
+      name: redpanda
+      namespace: knect-e2e
+  partitions: 3
+  replicationFactor: 1
+  overwriteTopicName: knect-orders
+  additionalConfig:
+    cleanup.policy: delete
+    retention.ms: "86400000"

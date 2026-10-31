@@ -1,0 +1,69 @@
+apiVersion: rabbitmq.com/v1beta1
+kind: RabbitmqCluster
+metadata:
+  name: rabbitmq-ops
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: operators-rabbitmq
+spec:
+  replicas: 1
+  image: rabbitmq:4.2.4-management
+  persistence:
+    storageClassName: standard
+    storage: 1Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rabbitmq-user-credentials
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: operators-rabbitmq
+    rabbitmq.com/topology-operator: "true"
+type: Opaque
+stringData:
+  username: knect-e2e
+  password: knect-e2e-rabbitmq-password
+---
+apiVersion: rabbitmq.com/v1beta1
+kind: User
+metadata:
+  name: knect-e2e-user
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: operators-rabbitmq
+spec:
+  rabbitmqClusterReference:
+    name: rabbitmq
+  tags:
+    - management
+  importCredentialsSecret:
+    name: rabbitmq-user-credentials
+---
+apiVersion: rabbitmq.com/v1beta1
+kind: Policy
+metadata:
+  name: knect-e2e-policy
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: operators-rabbitmq
+spec:
+  name: knect-e2e
+  pattern: "^knect-"
+  applyTo: queues
+  definition:
+    max-length: 10000
+  priority: 1
+  rabbitmqClusterReference:
+    name: rabbitmq

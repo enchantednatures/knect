@@ -1,0 +1,101 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: knect-e2e-require-labels
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: policy-kyverno
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-part-of-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Service
+              namespaces:
+                - knect-e2e
+      validate:
+        message: "Knative Services must carry app.kubernetes.io/part-of=knect."
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/part-of: knect
+---
+apiVersion: kyverno.io/v1
+kind: Policy
+metadata:
+  name: knect-e2e-disallow-latest
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: policy-kyverno
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: disallow-latest-tag
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "Images must be pinned; the latest tag is not allowed."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"
+---
+apiVersion: wgpolicyk8s.io/v1alpha2
+kind: PolicyReport
+metadata:
+  name: knect-e2e-policy-report
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: policy-report
+scope:
+  apiVersion: v1
+  kind: Namespace
+  name: knect-e2e
+summary:
+  pass: 1
+  fail: 0
+  warn: 0
+  error: 0
+  skip: 0
+results:
+  - policy: knect-e2e-require-labels
+    rule: require-part-of-label
+    result: pass
+    scored: true
+    source: kyverno
+    message: "namespace/knect-e2e has the required part-of label"
+---
+apiVersion: wgpolicyk8s.io/v1alpha2
+kind: ClusterPolicyReport
+metadata:
+  name: knect-e2e-cluster-policy-report
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: policy-report
+scope:
+  apiVersion: v1
+  kind: Namespace
+  name: knect-e2e
+summary:
+  pass: 1
+  fail: 0
+  warn: 0
+  error: 0
+  skip: 0
+results:
+  - policy: knect-e2e-require-labels
+    rule: require-part-of-label
+    result: pass
+    scored: true
+    source: kyverno
+    message: "cluster-scoped policy report fixture"

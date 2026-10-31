@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/environment: e2e
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-credentials
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+type: Opaque
+stringData:
+  REDIS_URL: redis://redis-master.knect-e2e.svc.cluster.local:6379
+  REDIS_SENTINEL: hunter2-knect-sentinel
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: knect-config
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+data:
+  POSTGRES_URL: postgresql://knect:knect-e2e-password@postgres-e2e-rw.knect-e2e.svc.cluster.local:5432/knect
+  KAFKA_BOOTSTRAP_SERVERS: redpanda.knect-e2e.svc.cluster.local:9092
+  RABBITMQ_HOST: rabbitmq.knect-e2e.svc.cluster.local
+  KNECT_SENTINEL: hunter2-knect-sentinel

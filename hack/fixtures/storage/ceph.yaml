@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rook-ceph
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/mock: "true"
+---
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: knect-e2e-pool
+  namespace: rook-ceph
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: storage-ceph
+spec:
+  failureDomain: host
+  replicated:
+    size: 1
+    requireSafeReplicaSize: false
+---
+apiVersion: ceph.rook.io/v1
+kind: CephFilesystem
+metadata:
+  name: knect-e2e-fs
+  namespace: rook-ceph
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: storage-ceph
+spec:
+  metadataPool:
+    replicated:
+      size: 1
+      requireSafeReplicaSize: false
+  dataPools:
+    - name: data0
+      failureDomain: host
+      replicated:
+        size: 1
+        requireSafeReplicaSize: false
+  metadataServer:
+    activeCount: 1
+    activeStandby: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi

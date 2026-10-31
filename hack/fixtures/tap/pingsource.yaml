@@ -1,0 +1,17 @@
+apiVersion: sources.knative.dev/v1
+kind: PingSource
+metadata:
+  name: tap-ping
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: tap
+spec:
+  schedule: "*/1 * * * *"
+  contentType: application/json
+  data: '{"type":"com.knect.tap","message":"knect tap fixture"}'
+  sink:
+    ref:
+      apiVersion: eventing.knative.dev/v1
+      kind: Broker
+      name: tap-broker

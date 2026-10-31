@@ -1,0 +1,48 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: order-processor
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/name: order-processor
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: serving
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "3"
+        autoscaling.knative.dev/target: "20"
+    spec:
+      containerConcurrency: 10
+      timeoutSeconds: 30
+      containers:
+        - name: order-processor
+          image: nginxinc/nginx-unprivileged:1.27.4
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http1
+              containerPort: 8080
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credentials
+                  key: REDIS_URL
+            - name: KNECT_ENVIRONMENT
+              value: e2e
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+  traffic:
+    - tag: stable
+      revisionName: order-processor-00001
+      percent: 90
+    - tag: canary
+      revisionName: order-processor-00002
+      percent: 10

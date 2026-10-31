@@ -1,0 +1,75 @@
+# Pinned images used by the knect Kind E2E environment.
+# Every entry MUST be an immutable tag or digest. No "latest".
+# preload-images.sh pulls these in parallel and loads them into the Kind node.
+
+# --- cert-manager v1.21.3 ---------------------------------------------------
+quay.io/jetstack/cert-manager-controller:v1.21.3
+quay.io/jetstack/cert-manager-webhook:v1.21.3
+quay.io/jetstack/cert-manager-cainjector:v1.21.3
+
+# --- Istio 1.29.2 -----------------------------------------------------------
+docker.io/istio/pilot:1.29.2
+docker.io/istio/proxyv2:1.29.2
+
+# --- Knative Serving 1.24.0 -------------------------------------------------
+gcr.io/knative-releases/knative.dev/serving/cmd/activator@sha256:986b7623548a759d9736e59512f1fceee7beb3cd5c39093b95d17d77f818308a
+gcr.io/knative-releases/knative.dev/serving/cmd/autoscaler@sha256:0fcd0d222ea7a8c6628136cd516e7ff1f4cab5a736445abdfd6a9ebc004b8dff
+gcr.io/knative-releases/knative.dev/serving/cmd/controller@sha256:9bf7db638f617e2d8086919cece028bb6b7598449039bc8eb4018cc599c324c4
+gcr.io/knative-releases/knative.dev/serving/cmd/default-domain@sha256:c4b2bcd8dd4b3432a884fc345df32b03a745d6a1c71f6d4985d190dcf7638d92
+gcr.io/knative-releases/knative.dev/serving/cmd/queue@sha256:acbd28666cc7eef7f9a3ed2495fb6d9e8fac1180b35a9f22246e3bb69c87a891
+gcr.io/knative-releases/knative.dev/serving/cmd/webhook@sha256:7cc4b7bc704086497cf2b5733e20856f6e2d8c95822212d1e06f1fb8697c9a08
+gcr.io/knative-releases/knative.dev/net-istio/cmd/controller@sha256:2148886f0540a9bfda5b252150f714e1bbe5afa13203b517b5657104459cde7a
+gcr.io/knative-releases/knative.dev/net-istio/cmd/webhook@sha256:ea6c9494a8eb2686e6186086201754323492480bc52f6a8d74a91bfecbfa7665
+
+# --- Knative Eventing 1.24.0 ------------------------------------------------
+gcr.io/knative-releases/knative.dev/eventing/cmd/apiserver_receive_adapter@sha256:0c553761a4b6553186bce7e39a5cdb225093e428393c5c4ee0ae724d83169941
+gcr.io/knative-releases/knative.dev/eventing/cmd/auth_proxy@sha256:4d771d0838a4cd759f0e4ef4c7182ddfe6fa752a9266b706255951a1602e964c
+gcr.io/knative-releases/knative.dev/eventing/cmd/broker/filter@sha256:ce794edbe2c41f5da3fa50893732775988d920a5c6bf8a0c1b5115ea96ea1bc9
+gcr.io/knative-releases/knative.dev/eventing/cmd/broker/ingress@sha256:f6cfd10f79efda45270135f193b6828c556ada97a8582bd36ff4cd2f236ff074
+gcr.io/knative-releases/knative.dev/eventing/cmd/controller@sha256:2a411f7ce81ebd483071e2b85af99e9ee62a8e8fee049c32a0a52c9ce2819ec4
+gcr.io/knative-releases/knative.dev/eventing/cmd/in_memory/channel_controller@sha256:7939a26f4466246fc943790d451c878bb5d4fb57e19e86bb1a6bb734eba06aca
+gcr.io/knative-releases/knative.dev/eventing/cmd/in_memory/channel_dispatcher@sha256:77bf26982b9437a1d4203745d2379bd9c2d61154e48bb2c0ae7a7b59242ed0ea
+gcr.io/knative-releases/knative.dev/eventing/cmd/jobsink@sha256:d3db25a74681dbc9b13f9e97648e4250a845b78215bcef406eb94d8ca40ebfa1
+gcr.io/knative-releases/knative.dev/eventing/cmd/mtchannel_broker@sha256:693cc6a6f9148953c4db58d82490fc994b52a3b23745ea028aac55ec993ed0bc
+gcr.io/knative-releases/knative.dev/eventing/cmd/mtping@sha256:14aa2fec23011c08c3ed5a9e6db99b171f49a7744685a0a85ed9313dd168c045
+gcr.io/knative-releases/knative.dev/eventing/cmd/requestreply@sha256:e8ed257ac9531472ee59912477481dc811973aeecad5680a900f0062fdf6ce94
+gcr.io/knative-releases/knative.dev/eventing/cmd/webhook@sha256:6537c9764d04372abdef88d576ee44bf718b83b55e5b07375710ea0e215633fe
+
+# --- Knative Kafka Broker 1.24.0 -------------------------------------------
+gcr.io/knative-releases/knative.dev/eventing-kafka-broker/control-plane/cmd/kafka-controller@sha256:b289e12c7023477ff03fd3288e4a9917bda5eb7a5eb4ad78e7a077fe7159095f
+gcr.io/knative-releases/knative.dev/eventing-kafka-broker/control-plane/cmd/webhook-kafka@sha256:bad9b55623d73b77045fd0fa75f543b1dfad28a080fd6d04ce573f768035b951
+gcr.io/knative-releases/knative-kafka-broker-dispatcher-loom@sha256:164a7abec2fcfabfd0e8b39b9c27999e8e3f531fd15118202d893fa2b1a285d5
+gcr.io/knative-releases/knative-kafka-broker-receiver-loom@sha256:95008b57590bad3d6ae20599beadb08bd3899025134cb1dbe1dd21011a1d21c7
+
+# --- Knative RabbitMQ Broker 1.24.0 ----------------------------------------
+gcr.io/knative-releases/knative.dev/eventing-rabbitmq/cmd/controller/broker@sha256:4d246d01ca6901abe65c4ae37e34dd657f71cfd7705961fb6edbd6b3ee7b41bf
+gcr.io/knative-releases/knative.dev/eventing-rabbitmq/cmd/controller/source@sha256:3afe2bccc5f839115ba311eacb96214e2ba4260ce6f66caba749de92f0fabea7
+gcr.io/knative-releases/knative.dev/eventing-rabbitmq/cmd/dispatcher@sha256:866c7d5d0954eb52a6c01617b44e414988173911df6498f0eca317665362c587
+gcr.io/knative-releases/knative.dev/eventing-rabbitmq/cmd/ingress@sha256:7862e576735bdc9752ad2e465eadb5fc144eb2aefbf224983feda1a568402b51
+gcr.io/knative-releases/knative.dev/eventing-rabbitmq/cmd/receive_adapter@sha256:2cc8c48f39dfcf2aad07c8611f4369a669fd1bc57bafc6d4b62f5ed7080e29ee
+gcr.io/knative-releases/knative.dev/eventing-rabbitmq/cmd/webhook/broker@sha256:0c03704bd3564f010e87c4b3d835a2a7e1319e288af04bb94d006c44e62511aa
+gcr.io/knative-releases/knative.dev/eventing-rabbitmq/cmd/webhook/source@sha256:2854275251e4fd3f597bd4c906d866a2c1457493ceed88e915889f0474200950
+
+# --- Messaging backends -----------------------------------------------------
+docker.redpanda.com/redpandadata/redpanda:v25.2.10
+rabbitmq:4.2.4-management
+ghcr.io/rabbitmq/cluster-operator:2.23.2
+ghcr.io/rabbitmq/messaging-topology-operator:1.20.5
+
+# --- Storage / database -----------------------------------------------------
+redis:7.4.5-alpine
+docker.dragonflydb.io/dragonflydb/dragonfly:v1.35.1
+ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1
+ghcr.io/cloudnative-pg/postgresql:17.6
+
+# --- Policy / progressive delivery -----------------------------------------
+reg.kyverno.io/kyverno/kyverno:v1.19.2
+reg.kyverno.io/kyverno/background-controller:v1.19.2
+reg.kyverno.io/kyverno/reports-controller:v1.19.2
+reg.kyverno.io/kyverno/kyvernopre:v1.19.2
+reg.kyverno.io/kyverno/kyverno-cli:v1.19.2
+ghcr.io/kyverno/readiness-checker:v1.19.2
+ghcr.io/fluxcd/flagger:1.45.0
+
+# --- Fixture workloads (pinned; no latest) ---------------------------------
+nginxinc/nginx-unprivileged:1.27.4

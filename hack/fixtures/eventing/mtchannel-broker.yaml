@@ -1,0 +1,37 @@
+apiVersion: eventing.knative.dev/v1
+kind: Broker
+metadata:
+  name: mt-broker
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: eventing-mtchannel
+  annotations:
+    eventing.knative.dev/broker.class: MTChannelBasedBroker
+spec:
+  config:
+    apiVersion: v1
+    kind: ConfigMap
+    name: config-br-default-channel
+    namespace: knative-eventing
+---
+apiVersion: eventing.knative.dev/v1
+kind: Trigger
+metadata:
+  name: order-created
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: eventing-filter
+spec:
+  broker: mt-broker
+  filter:
+    attributes:
+      type: com.knect.order.created
+      source: /knect/orders
+      knecttenant: acme
+  subscriber:
+    ref:
+      apiVersion: serving.knative.dev/v1
+      kind: Service
+      name: order-processor

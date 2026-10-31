@@ -1,0 +1,37 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: storage-consumer
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/name: storage-consumer
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: storage-kservice
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "1"
+    spec:
+      containerConcurrency: 1
+      containers:
+        - name: storage-consumer
+          image: nginxinc/nginx-unprivileged:1.27.4
+          ports:
+            - name: http1
+              containerPort: 8080
+          volumeMounts:
+            - name: static-data
+              mountPath: /usr/share/nginx/html/data
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+      volumes:
+        - name: static-data
+          persistentVolumeClaim:
+            claimName: knect-e2e-static

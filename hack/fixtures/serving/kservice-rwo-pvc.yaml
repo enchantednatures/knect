@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: order-cache
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: serving-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: order-cache
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/name: order-cache
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: serving-storage
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "5"
+    spec:
+      containerConcurrency: 1
+      containers:
+        - name: order-cache
+          image: nginxinc/nginx-unprivileged:1.27.4
+          ports:
+            - name: http1
+              containerPort: 8080
+          volumeMounts:
+            - name: cache
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: order-cache

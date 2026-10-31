@@ -1,0 +1,25 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: knect-e2e-actions-validate
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: actions-validate
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-team-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaces:
+                - knect-e2e
+      validate:
+        message: "Deployments in knect-e2e must have app.kubernetes.io/part-of."
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/part-of: "?*"

@@ -1,0 +1,33 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: knect-e2e
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.35.0
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+      # Rootless/user-namespaced Docker daemons (common on developer VMs and
+      # some CI runners) do not expose /dev/kmsg; the kubelet otherwise aborts
+      # with "failed to create an oomWatcher".
+      - |
+        kind: KubeletConfiguration
+        featureGates:
+          KubeletInUserNamespace: true
+    extraPortMappings:
+      # Istio ingress gateway is pinned to NodePort 30080/30443 in
+      # hack/install-istio.sh so these host ports line up with Kind.
+      - containerPort: 30080
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 30443
+        hostPort: 443
+        protocol: TCP
+      # Knative/Istio admin/debug surface (queue-proxy admin is 8022/8023;
+      # 7420 is reserved here for the E2E harness's forwarded control plane).
+      - containerPort: 30020
+        hostPort: 7420
+        protocol: TCP

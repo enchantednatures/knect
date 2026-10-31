@@ -1,0 +1,85 @@
+name: e2e
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KUBECONFIG: /tmp/knect-e2e-kubeconfig
+  KIND_VERSION: v0.31.0
+  KNECT_PRELOAD_IMAGES: "1"
+  KNECT_E2E_SAVE_IMAGE_CACHE: "1"
+
+jobs:
+  kind-e2e:
+    name: kind-e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install kind
+        run: |
+          curl -fsSL -o /tmp/kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x /tmp/kind
+          sudo mv /tmp/kind /usr/local/bin/kind
+          kind version
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.3.0
+
+      - name: Cache E2E images and downloads
+        uses: actions/cache@v4
+        with:
+          path: /tmp/knect-e2e-cache
+          key: ${{ runner.os }}-knect-e2e-${{ hashFiles('hack/images.txt', 'hack/kind-config.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-knect-e2e-
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Create cluster and install components
+        run: ./hack/setup-kind-e2e.sh
+
+      - name: Run knect-e2e
+        run: cargo run -p knect-e2e --locked -- --all
+
+      - name: Collect failure diagnostics
+        if: failure()
+        run: |
+          mkdir -p artifacts
+          kubectl --kubeconfig "${KUBECONFIG}" config current-context > artifacts/context.txt 2>&1 || true
+          kubectl --kubeconfig "${KUBECONFIG}" get nodes -o wide > artifacts/nodes.txt 2>&1 || true
+          kubectl --kubeconfig "${KUBECONFIG}" get pods -A -o wide > artifacts/pods.txt 2>&1 || true
+          kubectl --kubeconfig "${KUBECONFIG}" get events -A --sort-by=.lastTimestamp > artifacts/events.txt 2>&1 || true
+          kubectl --kubeconfig "${KUBECONFIG}" get all -A > artifacts/all.txt 2>&1 || true
+          docker stats --no-stream > artifacts/docker-stats.txt 2>&1 || true
+          kind export logs artifacts/kind-logs --name knect-e2e > artifacts/kind-export.txt 2>&1 || true
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: knect-e2e-logs
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Teardown
+        if: always()
+        run: ./hack/teardown-kind-e2e.sh

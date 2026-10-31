@@ -1,0 +1,27 @@
+apiVersion: rabbitmq.com/v1beta1
+kind: RabbitmqCluster
+metadata:
+  name: rabbitmq
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/name: rabbitmq
+    app.kubernetes.io/part-of: knect
+spec:
+  replicas: 1
+  image: rabbitmq:4.2.4-management
+  service:
+    type: ClusterIP
+  persistence:
+    storageClassName: standard
+    storage: 1Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 768Mi
+    limits:
+      cpu: "1"
+      memory: 768Mi
+  rabbitmq:
+    additionalConfig: |
+      default_queue_type = quorum
+      cluster_partition_handling = pause_minority

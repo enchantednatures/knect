@@ -1,0 +1,49 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: knect-e2e-block
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: storage
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: knect-e2e-pv
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: storage
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: knect-e2e-block
+  hostPath:
+    path: /var/local-path-provisioner/knect-e2e-pv
+    type: DirectoryOrCreate
+  claimRef:
+    namespace: knect-e2e
+    name: knect-e2e-static
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: knect-e2e-static
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: knect-e2e-block
+  volumeName: knect-e2e-pv
+  resources:
+    requests:
+      storage: 1Gi

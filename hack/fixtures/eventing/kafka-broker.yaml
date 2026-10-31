@@ -1,0 +1,36 @@
+apiVersion: eventing.knative.dev/v1
+kind: Broker
+metadata:
+  name: kafka-broker
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: eventing-kafka
+  annotations:
+    eventing.knative.dev/broker.class: Kafka
+spec:
+  config:
+    apiVersion: v1
+    kind: ConfigMap
+    name: kafka-broker-config
+    namespace: knative-eventing
+---
+apiVersion: sources.knative.dev/v1beta1
+kind: KafkaSource
+metadata:
+  name: kafka-orders
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: eventing-kafka
+spec:
+  consumerGroup: knect-e2e-orders
+  bootstrapServers:
+    - redpanda.knect-e2e.svc.cluster.local:9092
+  topics:
+    - knect-orders
+  sink:
+    ref:
+      apiVersion: eventing.knative.dev/v1
+      kind: Broker
+      name: kafka-broker

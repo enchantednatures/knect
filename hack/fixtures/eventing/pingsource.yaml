@@ -1,0 +1,17 @@
+apiVersion: sources.knative.dev/v1
+kind: PingSource
+metadata:
+  name: order-ping
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: eventing-ping
+spec:
+  schedule: "*/1 * * * *"
+  contentType: application/json
+  data: '{"orderId":"knect-ping-1","tenant":"acme"}'
+  sink:
+    ref:
+      apiVersion: eventing.knative.dev/v1
+      kind: Broker
+      name: mt-broker

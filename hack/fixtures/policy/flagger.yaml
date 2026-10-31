@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-processor-flagger
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/name: order-processor-flagger
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: policy-flagger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: order-processor-flagger
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: order-processor-flagger
+        app.kubernetes.io/part-of: knect
+        knect.dev/scenario: policy-flagger
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: app
+          image: nginxinc/nginx-unprivileged:1.27.4
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: knect-request-success-rate
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: policy-flagger
+spec:
+  provider:
+    type: prometheus
+    address: http://prometheus.monitoring.svc.cluster.local:9090
+  query: |
+    100 - (
+      sum(rate(istio_requests_total{
+        reporter="destination",
+        destination_workload_namespace="{{ namespace }}",
+        destination_workload="{{ target }}",
+        response_code=~"5.*"
+      }[{{ interval }}])) or vector(0)
+    )
+    /
+    (sum(rate(istio_requests_total{
+      reporter="destination",
+      destination_workload_namespace="{{ namespace }}",
+      destination_workload="{{ target }}"
+    }[{{ interval }}])) or vector(1))
+    * 100
+---
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: order-processor-flagger
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: policy-flagger
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: order-processor-flagger
+  service:
+    port: 80
+    targetPort: 8080
+    gateways:
+      - mesh
+    hosts:
+      - order-processor-flagger.knect-e2e.example.com
+  analysis:
+    interval: 10s
+    threshold: 2
+    maxWeight: 50
+    stepWeight: 10
+    metrics:
+      - name: request-success-rate
+        templateRef:
+          name: knect-request-success-rate
+          namespace: knect-e2e
+        thresholdRange:
+          min: 99
+        interval: 10s

@@ -1,0 +1,55 @@
+apiVersion: eventing.knative.dev/v1alpha1
+kind: RabbitmqBrokerConfig
+metadata:
+  name: rabbitmq-broker-config
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: eventing-rabbitmq
+spec:
+  vhost: /
+  queueType: quorum
+  rabbitmqClusterReference:
+    name: rabbitmq
+    namespace: knect-e2e
+---
+apiVersion: eventing.knative.dev/v1
+kind: Broker
+metadata:
+  name: rabbitmq-broker
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: eventing-rabbitmq
+  annotations:
+    eventing.knative.dev/broker.class: RabbitMQBroker
+spec:
+  config:
+    apiVersion: eventing.knative.dev/v1alpha1
+    kind: RabbitmqBrokerConfig
+    name: rabbitmq-broker-config
+    namespace: knect-e2e
+---
+apiVersion: sources.knative.dev/v1alpha1
+kind: RabbitmqSource
+metadata:
+  name: rabbitmq-orders
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: eventing-rabbitmq
+spec:
+  rabbitmqClusterReference:
+    name: rabbitmq
+    namespace: knect-e2e
+  rabbitmqResourcesConfig:
+    vhost: /
+    queueName: knect-orders
+    exchangeName: knect-orders
+    parallelism: 1
+    predeclared: false
+  sink:
+    ref:
+      apiVersion: eventing.knative.dev/v1
+      kind: Broker
+      name: rabbitmq-broker

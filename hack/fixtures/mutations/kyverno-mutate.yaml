@@ -1,0 +1,48 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: knect-e2e-mutate-labels
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: mutations
+spec:
+  background: true
+  rules:
+    - name: add-knect-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Service
+              namespaces:
+                - knect-e2e
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              knect.dev/managed: "true"
+              knect.dev/environment: e2e
+---
+apiVersion: kyverno.io/v1
+kind: Policy
+metadata:
+  name: knect-e2e-add-annotation
+  namespace: knect-e2e
+  labels:
+    app.kubernetes.io/part-of: knect
+    knect.dev/scenario: mutations
+spec:
+  background: true
+  rules:
+    - name: add-owner-annotation
+      match:
+        any:
+          - resources:
+              kinds:
+                - ConfigMap
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            annotations:
+              knect.dev/owner: e2e-harness
