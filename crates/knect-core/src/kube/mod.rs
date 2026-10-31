@@ -1,15 +1,19 @@
 //! Kubernetes access boundary.
 //!
 //! Correlators and the daemon depend on the [`ClusterReader`] trait, never on
-//! `kube` directly. Task 3 replaces the discovery/watch bodies of the
-//! production reader and adds the fake reader; the trait shape is frozen here.
+//! `kube` directly. Discovery, watch supervision, sanitization, and the fake
+//! reader live in sibling modules; the trait shape is frozen here.
 //!
 //! The trait is hand-desugared instead of using `async_trait` because the
 //! workspace dependency pin does not include `async-trait`. The desugared form
 //! is object-safe (`Arc<dyn ClusterReader>`), which the async-trait attribute
 //! would also provide.
 
+pub mod discovery;
+pub mod fake;
 pub mod reader;
+pub mod sanitize;
+pub mod watch;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -21,13 +25,22 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::CoreError;
 
+pub use discovery::DiscoveryManager;
+pub use fake::FakeReader;
 pub use reader::{KubeReader, guess_plural};
+pub use sanitize::{SanitizedObject, Sanitizer, SanitizerConfig, SecretMaterial};
+pub use watch::{WatchHandle, WatchManager, WatchOutcome, WatchUpdate};
 
 /// A boxed, sendable future used by the object-safe reader trait.
 pub type CoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// A Kubernetes watch event for a dynamic object.
-pub type WatchEvent = kube::api::WatchEvent<DynamicObject>;
+///
+/// Task 3 moved this alias from the legacy `kube::api::WatchEvent` to the
+/// runtime watcher event so supervisors can observe `Init`, `InitApply`,
+/// `Apply`, `Delete`, and `InitDone`. The event variants are unchanged for
+/// consumers that only match `Apply`/`Delete`.
+pub type WatchEvent = kube::runtime::watcher::Event<DynamicObject>;
 
 /// One discovered API resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +55,33 @@ pub struct DiscoveredResource {
     pub namespaced: bool,
     /// Verbs advertised by the API server.
     pub verbs: Vec<String>,
+}
+
+impl DiscoveredResource {
+    /// Returns the `kube` API resource descriptor for this discovery result.
+    ///
+    /// Builds the descriptor from discovered values only; it never guesses the
+    /// plural because discovery already supplied it.
+    #[must_use]
+    pub fn api_resource(&self) -> ApiResource {
+        ApiResource {
+            group: self.gvk.group.clone(),
+            version: self.gvk.version.clone(),
+            api_version: self.api_version.clone(),
+            kind: self.gvk.kind.clone(),
+            plural: self.plural.clone(),
+        }
+    }
+
+    /// Returns true when the API server advertises both `list` and `watch`.
+    #[must_use]
+    pub fn supports_list_and_watch(&self) -> bool {
+        has_verb(&self.verbs, "list") && has_verb(&self.verbs, "watch")
+    }
+}
+
+fn has_verb(verbs: &[String], expected: &str) -> bool {
+    verbs.iter().any(|verb| verb == expected)
 }
 
 /// Result of an API discovery pass.
@@ -106,8 +146,8 @@ pub trait ClusterReader: Send + Sync {
 
     /// Watches objects for one API resource.
     ///
-    /// The foundation implementation yields exactly one
-    /// [`CoreError::Unsupported`]; Task 3 replaces it with a real watcher.
+    /// The stream ends after `cancel` fires. Errors are reported as values so
+    /// a supervisor can classify transient failures and CRD deletion (`404`).
     fn watch(
         &self,
         ar: &ApiResource,

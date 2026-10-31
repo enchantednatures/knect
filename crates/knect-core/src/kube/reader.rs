@@ -1,9 +1,10 @@
 //! Production `kube::Client` wrapper implementing [`ClusterReader`].
 //!
-//! Discovery works through `kube::discovery::Discovery`. Watch and log
-//! streaming return a single typed [`CoreError::Unsupported`] until Tasks 3 and
-//! 12 install the real implementations. No method here contacts a cluster at
-//! construction time.
+//! Discovery prefers aggregated discovery and falls back to the legacy
+//! per-group discovery flow. Watch streaming is backed by the `kube` runtime
+//! watcher. Log streaming returns a single typed [`CoreError::Unsupported`]
+//! until Task 12 installs the real implementation. No method here contacts a
+//! cluster at construction time.
 
 use std::path::Path;
 
@@ -13,6 +14,7 @@ use knect_proto::Gvk;
 use kube::api::{Api, ApiResource, DynamicObject, ListParams, Patch, PatchParams, PostParams};
 use kube::config::{KubeConfigOptions, Kubeconfig};
 use kube::discovery::{Discovery, Scope};
+use kube::runtime::{WatchStreamExt, watcher};
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -93,24 +95,27 @@ impl ClusterReader for KubeReader {
     fn discover(&self) -> CoreFuture<'_, Result<DiscoverySnapshot, CoreError>> {
         let client = self.client.clone();
         Box::pin(async move {
-            let discovery = Discovery::new(client)
-                .run()
-                .await
-                .map_err(CoreError::Kube)?;
+            let discovery = match Discovery::new(client.clone()).run_aggregated().await {
+                Ok(discovery) => discovery,
+                Err(error) => {
+                    tracing::debug!(
+                        %error,
+                        "aggregated discovery unavailable; falling back to legacy discovery"
+                    );
+                    Discovery::new(client)
+                        .run()
+                        .await
+                        .map_err(CoreError::Kube)?
+                }
+            };
             let mut resources = Vec::new();
             for group in discovery.groups() {
                 for (resource, capabilities) in group.recommended_resources() {
-                    resources.push(DiscoveredResource {
-                        gvk: Gvk::new(
-                            resource.group.clone(),
-                            resource.version.clone(),
-                            resource.kind.clone(),
-                        ),
-                        plural: resource.plural,
-                        api_version: resource.api_version,
-                        namespaced: capabilities.scope == Scope::Namespaced,
-                        verbs: capabilities.operations,
-                    });
+                    resources.push(discovered_resource(
+                        resource,
+                        capabilities.scope,
+                        capabilities.operations,
+                    ));
                 }
             }
             resources.sort_by(|left, right| left.gvk.cmp(&right.gvk));
@@ -141,16 +146,19 @@ impl ClusterReader for KubeReader {
 
     fn watch(
         &self,
-        _ar: &ApiResource,
-        _ns: Option<&str>,
-        _cancel: CancellationToken,
+        ar: &ApiResource,
+        ns: Option<&str>,
+        cancel: CancellationToken,
     ) -> BoxStream<'static, Result<WatchEvent, CoreError>> {
-        futures::stream::once(async {
-            Err(CoreError::Unsupported(
-                "watch streaming is implemented by Task 3".to_owned(),
-            ))
-        })
-        .boxed()
+        let api = match ns {
+            Some(namespace) => Api::namespaced_with(self.client.clone(), namespace, ar),
+            None => Api::all_with(self.client.clone(), ar),
+        };
+        watcher::watcher(api, watcher::Config::default().any_semantic())
+            .default_backoff()
+            .take_until(cancel.cancelled_owned())
+            .map(|result| result.map_err(map_watcher_error))
+            .boxed()
     }
 
     fn get<'a>(
@@ -233,8 +241,9 @@ impl ClusterReader for KubeReader {
 
 /// Builds a dynamic API resource, guessing the plural.
 ///
-/// Task 3 replaces the guess with the discovered plural. The guess exists so
-/// Tasks 5-12 can call `get`/`patch` before discovery is wired.
+/// Watchers use the [`ApiResource`] supplied by discovery, so their plural is
+/// exact. `get`/`patch_merge` still synthesize an [`ApiResource`] from a GVK;
+/// a later reader cache can replace the guess with the discovered plural.
 #[must_use]
 pub fn dynamic_resource(gvk: &Gvk) -> ApiResource {
     ApiResource {
@@ -243,6 +252,43 @@ pub fn dynamic_resource(gvk: &Gvk) -> ApiResource {
         api_version: gvk.api_version(),
         kind: gvk.kind.clone(),
         plural: guess_plural(&gvk.kind),
+    }
+}
+
+fn discovered_resource(
+    resource: ApiResource,
+    scope: Scope,
+    operations: Vec<String>,
+) -> DiscoveredResource {
+    DiscoveredResource {
+        gvk: Gvk::new(
+            resource.group.clone(),
+            resource.version.clone(),
+            resource.kind.clone(),
+        ),
+        plural: resource.plural,
+        api_version: resource.api_version,
+        namespaced: scope == Scope::Namespaced,
+        verbs: operations,
+    }
+}
+
+fn map_watcher_error(error: watcher::Error) -> CoreError {
+    match error {
+        watcher::Error::InitialListFailed(source)
+        | watcher::Error::WatchStartFailed(source)
+        | watcher::Error::WatchFailed(source) => map_client_error(source),
+        watcher::Error::WatchError(status) => CoreError::Kube(kube::Error::Api(status)),
+        watcher::Error::NoResourceVersion => {
+            CoreError::Watch("watch result has no metadata.resourceVersion".to_owned())
+        }
+    }
+}
+
+fn map_client_error(error: kube::Error) -> CoreError {
+    match error {
+        kube::Error::Api(status) => CoreError::Kube(kube::Error::Api(status)),
+        other => CoreError::Watch(other.to_string()),
     }
 }
 
