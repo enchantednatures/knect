@@ -1,0 +1,505 @@
+[
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "order-processor",
+      "namespace": "knect-e2e",
+      "uid": "uid-kservice-order",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {},
+    "status": {
+      "url": "http://order-processor.knect-e2e.sslip.io",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "order-processor-dls",
+      "namespace": "knect-e2e",
+      "uid": "uid-kservice-order-dls",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {},
+    "status": {
+      "url": "http://order-processor-dls.knect-e2e.sslip.io",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "name": "order-consumer",
+      "namespace": "knect-e2e",
+      "uid": "uid-deploy-order-consumer",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "replicas": 1,
+      "selector": {
+        "matchLabels": { "app": "order-consumer" }
+      }
+    },
+    "status": {
+      "readyReplicas": 1,
+      "replicas": 1,
+      "conditions": [
+        {
+          "type": "Available",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "eventing.knative.dev/v1",
+    "kind": "Broker",
+    "metadata": {
+      "name": "mt-broker",
+      "namespace": "knect-e2e",
+      "uid": "uid-broker-mt",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "annotations": {
+        "eventing.knative.dev/broker.class": "MTChannelBasedBroker"
+      }
+    },
+    "spec": {
+      "config": {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "name": "config-br-default-channel",
+        "namespace": "knative-eventing"
+      }
+    },
+    "status": {
+      "address": {
+        "name": "http",
+        "url": "http://broker-ingress.knative-eventing.svc.cluster.local/knect-e2e/mt-broker"
+      },
+      "annotations": {
+        "knative.dev/channelAPIVersion": "messaging.knative.dev/v1",
+        "knative.dev/channelAddress": "http://mt-broker-kne-trigger-kn-channel.knect-e2e.svc.cluster.local",
+        "knative.dev/channelKind": "InMemoryChannel",
+        "knative.dev/channelName": "mt-broker-kne-trigger",
+        "knative.dev/channelNamespace": "knect-e2e"
+      },
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:33:24Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "eventing.knative.dev/v1",
+    "kind": "Broker",
+    "metadata": {
+      "name": "kafka-broker",
+      "namespace": "knect-e2e",
+      "uid": "uid-broker-kafka",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "annotations": {
+        "eventing.knative.dev/broker.class": "Kafka"
+      }
+    },
+    "spec": {
+      "config": {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "name": "kafka-broker-config",
+        "namespace": "knative-eventing"
+      }
+    },
+    "status": {
+      "address": {
+        "name": "http",
+        "url": "http://kafka-broker-ingress.knative-eventing.svc.cluster.local/knect-e2e/kafka-broker"
+      },
+      "annotations": {
+        "bootstrap.servers": "redpanda.knect-e2e.svc.cluster.local:9092",
+        "default.topic": "knative-broker-knect-e2e-kafka-broker"
+      },
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:33:24Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "eventing.knative.dev/v1",
+    "kind": "Broker",
+    "metadata": {
+      "name": "rabbitmq-broker",
+      "namespace": "knect-e2e",
+      "uid": "uid-broker-rabbitmq",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "annotations": {
+        "eventing.knative.dev/broker.class": "RabbitMQBroker"
+      }
+    },
+    "spec": {
+      "config": {
+        "apiVersion": "eventing.knative.dev/v1alpha1",
+        "kind": "RabbitmqBrokerConfig",
+        "name": "rabbitmq-broker-config",
+        "namespace": "knect-e2e"
+      }
+    },
+    "status": {
+      "address": {
+        "name": "http",
+        "url": "http://rabbitmq-broker-broker-ingress.knect-e2e.svc.cluster.local"
+      },
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "messaging.knative.dev/v1",
+    "kind": "InMemoryChannel",
+    "metadata": {
+      "name": "mt-broker-kne-trigger",
+      "namespace": "knect-e2e",
+      "uid": "uid-channel-mt",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {},
+    "status": {
+      "address": {
+        "name": "http",
+        "url": "http://mt-broker-kne-trigger-kn-channel.knect-e2e.svc.cluster.local"
+      },
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:33:24Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "messaging.knative.dev/v1",
+    "kind": "Channel",
+    "metadata": {
+      "name": "orders-channel",
+      "namespace": "knect-e2e",
+      "uid": "uid-channel-orders",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {},
+    "status": {
+      "address": {
+        "name": "http",
+        "url": "http://orders-channel.knect-e2e.svc.cluster.local"
+      },
+      "channel": {
+        "apiVersion": "messaging.knative.dev/v1",
+        "kind": "InMemoryChannel",
+        "name": "orders-inmemory"
+      },
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:33:24Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "messaging.knative.dev/v1",
+    "kind": "InMemoryChannel",
+    "metadata": {
+      "name": "orders-inmemory",
+      "namespace": "knect-e2e",
+      "uid": "uid-channel-orders-inmemory",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {},
+    "status": {
+      "address": {
+        "name": "http",
+        "url": "http://orders-inmemory.knect-e2e.svc.cluster.local"
+      },
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:33:24Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "eventing.knative.dev/v1",
+    "kind": "Trigger",
+    "metadata": {
+      "name": "order-created",
+      "namespace": "knect-e2e",
+      "uid": "uid-trigger-order-created",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "broker": "mt-broker",
+      "filter": {
+        "attributes": {
+          "knecttenant": "acme",
+          "source": "/knect/orders",
+          "type": "com.knect.order.created"
+        }
+      },
+      "subscriber": {
+        "ref": {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Service",
+          "name": "order-processor",
+          "namespace": "knect-e2e"
+        }
+      },
+      "delivery": {
+        "deadLetterSink": {
+          "ref": {
+            "apiVersion": "serving.knative.dev/v1",
+            "kind": "Service",
+            "name": "order-processor-dls",
+            "namespace": "knect-e2e"
+          }
+        }
+      }
+    },
+    "status": {
+      "subscriberUri": "http://order-processor.knect-e2e.svc.cluster.local",
+      "deadLetterSinkUri": "http://order-processor-dls.knect-e2e.svc.cluster.local",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:47Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "eventing.knative.dev/v1",
+    "kind": "Trigger",
+    "metadata": {
+      "name": "kafka-orders",
+      "namespace": "knect-e2e",
+      "uid": "uid-trigger-kafka-orders",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "broker": "kafka-broker",
+      "filter": {
+        "attributes": {
+          "type": "com.knect.order.created"
+        }
+      },
+      "subscriber": {
+        "ref": {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Service",
+          "name": "order-processor"
+        }
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:47Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "eventing.knative.dev/v1",
+    "kind": "Trigger",
+    "metadata": {
+      "name": "rabbitmq-orders",
+      "namespace": "knect-e2e",
+      "uid": "uid-trigger-rabbitmq-orders",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "brokerRef": {
+        "apiVersion": "eventing.knative.dev/v1",
+        "kind": "Broker",
+        "name": "rabbitmq-broker",
+        "namespace": "knect-e2e"
+      },
+      "subscriber": {
+        "ref": {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Service",
+          "name": "order-processor"
+        }
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:47Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "sources.knative.dev/v1",
+    "kind": "PingSource",
+    "metadata": {
+      "name": "ping-orders",
+      "namespace": "knect-e2e",
+      "uid": "uid-pingsource-ping-orders",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "schedule": "*/1 * * * *",
+      "sink": {
+        "ref": {
+          "apiVersion": "eventing.knative.dev/v1",
+          "kind": "Broker",
+          "name": "mt-broker",
+          "namespace": "knect-e2e"
+        }
+      }
+    },
+    "status": {
+      "sinkUri": "http://broker-ingress.knative-eventing.svc.cluster.local/knect-e2e/mt-broker",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:33:24Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "sources.knative.dev/v1",
+    "kind": "SinkBinding",
+    "metadata": {
+      "name": "deployment-binding",
+      "namespace": "knect-e2e",
+      "uid": "uid-sinkbinding-deployment",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "subject": {
+        "ref": {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "order-consumer",
+          "namespace": "knect-e2e"
+        }
+      },
+      "sink": {
+        "ref": {
+          "apiVersion": "eventing.knative.dev/v1",
+          "kind": "Broker",
+          "name": "mt-broker",
+          "namespace": "knect-e2e"
+        }
+      }
+    },
+    "status": {
+      "sinkUri": "http://broker-ingress.knative-eventing.svc.cluster.local/knect-e2e/mt-broker",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:33:24Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "messaging.knative.dev/v1",
+    "kind": "Subscription",
+    "metadata": {
+      "name": "orders-subscription",
+      "namespace": "knect-e2e",
+      "uid": "uid-subscription-orders",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "labels": {
+        "eventing.knative.dev/broker": "mt-broker"
+      }
+    },
+    "spec": {
+      "channel": {
+        "apiVersion": "messaging.knative.dev/v1",
+        "kind": "Channel",
+        "name": "orders-channel",
+        "namespace": "knect-e2e"
+      },
+      "subscriber": {
+        "ref": {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Service",
+          "name": "order-processor",
+          "namespace": "knect-e2e"
+        }
+      },
+      "reply": {
+        "ref": {
+          "apiVersion": "eventing.knative.dev/v1",
+          "kind": "Broker",
+          "name": "mt-broker",
+          "namespace": "knect-e2e"
+        }
+      },
+      "delivery": {
+        "deadLetterSink": {
+          "ref": {
+            "apiVersion": "serving.knative.dev/v1",
+            "kind": "Service",
+            "name": "order-processor-dls",
+            "namespace": "knect-e2e"
+          }
+        }
+      }
+    },
+    "status": {
+      "subscriberUri": "http://order-processor.knect-e2e.svc.cluster.local",
+      "deadLetterSinkUri": "http://order-processor-dls.knect-e2e.svc.cluster.local",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:47Z"
+        }
+      ]
+    }
+  }
+]

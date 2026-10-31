@@ -35,12 +35,22 @@ knectd          knect-tui / knect-e2e
 | `error.rs` | `CoreError`, `code()`, `retryable()`, `to_rpc_error`, `From<CoreError> for RpcError` | frozen |
 | `config.rs` | `Config`, `DaemonConfig`, `DiscoveryConfig`, `WatchConfig`, `CacheConfig`, `TapConfig`, `UiConfig`, `ActionsConfig`, `ConfigOverrides`, loader, `Config::safe()` | frozen |
 | `kube/mod.rs` | `ClusterReader`, `DiscoverySnapshot`, `DiscoveredResource`, `DryRunResult`, `LogOptions`, `WatchEvent` | frozen trait |
-| `kube/reader.rs` | `KubeReader` over `kube::Client`; discovery works, watch/log stream return typed `Unsupported` | Task 3/12 replace bodies |
+| `kube/reader.rs` | `KubeReader` over `kube::Client`: discovery, list/get/patch/dry-run, and real watch streaming; log stream still typed `Unsupported` | Task 12 replaces log streaming |
+| `kube/discovery.rs` | `DiscoveryManager`, group/verb filtering, missing-group warnings, pure `find` | implemented |
+| `kube/watch.rs` | `WatchManager`, typed `WatchUpdate`/`WatchOutcome`, 404 `ResourceGone`, deterministic backoff | implemented |
+| `kube/sanitize.rs` | annotation stripping, status cap, secret material extraction, serializable redaction | implemented |
+| `kube/fake.rs` | scripted `FakeReader` for discovery/list/get/patch/dry-run/watch tests | implemented |
 | `store/mod.rs` | `ResourceStore`, `StoreEvent`, indexes, generation | frozen |
 | `store/resource.rs` | `ResourceId` derivation, owner keys, label matching | frozen |
-| `graph/mod.rs` | `GraphBuilder`, `GraphEngine`, deterministic `Topology` projection and stats | API frozen |
+| `graph/mod.rs` | Re-exports `GraphBuilder`, `GraphEngine`, `diff_topologies`, `stats_for`, `edge_id` | API frozen |
+| `graph/engine.rs` | `GraphBuilder`/`GraphEngine` over `StableDiGraph` | implemented |
+| `graph/patch.rs` | deterministic `GraphPatch` diffing | implemented |
+| `graph/stats.rs` | deterministic node/edge/warning/category statistics and truncation flag | implemented |
+| `graph/support.rs` | shared node/edge/time/condition/sanitization helpers and stable edge IDs | implemented |
 | `correlate/mod.rs` | `CorrelationContext`, `Correlator`, `CorrelationPipeline`, frozen `STAGES` order | frozen registry |
-| `correlate/{serving,eventing,links,operators,storage,mutations}.rs` | No-op stage stubs | Task 4/6/7/8/9 replace bodies |
+| `correlate/serving.rs` | KService -> Route/Configuration -> Revision -> PA -> Deployment -> Pod, traffic and scale states | implemented |
+| `correlate/eventing.rs` | Broker/Trigger/Source/SinkBinding/Subscription/Channel, filters, DLS, MT/Kafka/RabbitMQ classes | implemented |
+| `correlate/{links,operators,storage,mutations}.rs` | No-op stage stubs | Task 6/7/8/9 replace bodies |
 | `correlate/policy/{mod,istio,flagger,kyverno}.rs` | Policy aggregator plus no-op sub-stages | Task 10 replaces bodies |
 | `cache/mod.rs` | `SnapshotCache`, `NoopCache` | Task 5 replaces implementation |
 | `actions/mod.rs` | `ActionExecutor`, `DisabledActions` | Task 11 replaces implementation |
@@ -118,9 +128,9 @@ later tasks only replace stub bodies.
 ```text
 Kubernetes API
   -> ClusterReader (discover/list/watch/get/patch/dry-run/log)
-  -> Sanitizer (Task 3; strips heavy fields and secret payloads)
+  -> Sanitizer (strips heavy annotations, caps oversized status, redacts Secrets)
   -> ResourceStore (BTreeMap + GVK/namespace/owner/label indexes, generation)
-  -> CorrelationPipeline (pure, fixed order)
+  -> CorrelationPipeline (pure, fixed order; serving/eventing implemented)
   -> GraphBuilder
   -> GraphEngine (StableDiGraph, stable ResourceId -> NodeIndex)
   -> Topology projection (nodes by ResourceId, edges by id, sorted stats)
@@ -139,7 +149,7 @@ constructs a Kubernetes client.
    frozen. New behavior must fit an existing variant or be added through the
    orchestrator.
 3. **Reader**: `ClusterReader` keeps its hand-desugared object-safe signatures.
-   Task 3 implements discovery/watch/get/patch/dry-run; Task 12 implements
+   Discovery/watch/get/patch/dry-run are implemented; Task 12 implements
    `log_stream`.
 4. **Store**: `upsert` returns `StoreEvent`, every mutation bumps the
    generation, iteration is `ResourceId` order, and removal cleans every index.
@@ -174,12 +184,13 @@ constructs a Kubernetes client.
   dev-dependency. This keeps `cargo check -p knect-core` working for parallel
   tasks that do not build the daemon. A future multi-version build must move
   the feature choice back to the binary crate.
-- **Fixture topology**: correlation stages are no-ops, so a non-empty fixture
-  loads objects into the store but the served topology remains empty until
-  Tasks 4/5 run the pipeline.
-- **Discovery**: discovery uses `kube::discovery::Discovery`; plural
-  guessing in `KubeReader::get`/`patch_merge` is temporary and Task 3 replaces
-  it with discovered plurals.
+- **Fixture topology**: serving and eventing correlators are real; the daemon
+  still needs the Task 5 recompute loop to serve their output through RPC/SSE.
+  Fixture mode can already load objects into the store.
+- **Discovery**: discovery uses aggregated `kube::discovery::Discovery` with a
+  legacy fallback. Watchers use the discovered `ApiResource` plural; the
+  synthesized plural in `KubeReader::get`/`patch_merge` remains until a reader
+  cache is wired.
 - **`min_generation`**: the dispatcher returns the current topology instead of
   blocking. The bounded catch-up wait belongs to the Task 5 recompute loop.
 - **Actions**: both `daemon.allow_actions` and `actions.enabled` must be true.
@@ -192,14 +203,14 @@ constructs a Kubernetes client.
 
 | Layer | Where | Foundation coverage |
 |---|---|---|
-| Pure unit | `knect-core` lib tests | config precedence, error mapping, store indexes, graph determinism, pipeline order, reader helpers |
+| Pure unit | `knect-core` lib tests | config precedence, error mapping, store indexes, discovery filtering, watch mapping/backoff, sanitizer redaction, graph determinism, patch/stats |
+| Fixture snapshots | `knect-core` integration tests | exact Serving/Eventing nodes, edges, traffic metadata, scale states, filters |
 | Router/transport unit | `knectd` lib tests | dispatcher method table, invalid envelope/params, empty topology, SSE frames, UDS permissions, JSONL round-trip, fixture startup |
 | TUI unit | `knect-tui` lib tests | clap parsing, endpoint resolution, key mapping, `TestBackend` placeholder frame |
 | Harness unit | `knect-e2e` lib tests | endpoint selection, topology validation, event assertions, scenario registry |
 | Real surface | curl/manual + `knect-e2e` | `knectd --fixture` HTTP, UDS, SSE, socket cleanup |
-| Fixture snapshots | later tasks | `testdata/fixtures/**` into store and graph |
-| Fake kube API | Task 3 | `FakeReader`/`wiremock` discovery and watch edge cases |
-| Live Kind | Task 2/5+ | `knect-e2e --all` |
+| Fake kube API | implemented | `FakeReader` discovery/list/get/patch/dry-run/watch edge cases |
+| Live Kind | Task 2/5+ | discovery/watch probes and `knect-e2e --all` |
 
 ## 9. Verification
 

@@ -1,0 +1,712 @@
+[
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "order-processor",
+      "namespace": "knect-e2e",
+      "uid": "uid-kservice-order",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "labels": { "app": "order-processor" }
+    },
+    "spec": {},
+    "status": {
+      "url": "http://order-processor.knect-e2e.sslip.io",
+      "latestReadyRevisionName": "order-processor-00002",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Route",
+    "metadata": {
+      "name": "order-processor",
+      "namespace": "knect-e2e",
+      "uid": "uid-route-order",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "ownerReferences": [
+        {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Service",
+          "name": "order-processor",
+          "uid": "uid-kservice-order",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {
+      "traffic": [
+        {
+          "latestRevision": false,
+          "percent": 90,
+          "revisionName": "order-processor-00001",
+          "tag": "stable"
+        },
+        {
+          "latestRevision": false,
+          "percent": 10,
+          "revisionName": "order-processor-00002",
+          "tag": "canary"
+        }
+      ]
+    },
+    "status": {
+      "url": "http://order-processor.knect-e2e.sslip.io",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ],
+      "traffic": [
+        {
+          "latestRevision": false,
+          "percent": 90,
+          "revisionName": "order-processor-00001",
+          "tag": "stable",
+          "url": "http://stable-order-processor.knect-e2e.sslip.io"
+        },
+        {
+          "latestRevision": false,
+          "percent": 10,
+          "revisionName": "order-processor-00002",
+          "tag": "canary",
+          "url": "http://canary-order-processor.knect-e2e.sslip.io"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Configuration",
+    "metadata": {
+      "name": "order-processor",
+      "namespace": "knect-e2e",
+      "uid": "uid-config-order",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "ownerReferences": [
+        {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Service",
+          "name": "order-processor",
+          "uid": "uid-kservice-order",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {},
+    "status": {
+      "latestCreatedRevisionName": "order-processor-00003",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Revision",
+    "metadata": {
+      "name": "order-processor-00001",
+      "namespace": "knect-e2e",
+      "uid": "uid-rev-order-00001",
+      "creationTimestamp": "2026-10-31T21:33:10Z",
+      "labels": {
+        "serving.knative.dev/configuration": "order-processor",
+        "serving.knative.dev/configurationGeneration": "1",
+        "serving.knative.dev/service": "order-processor"
+      }
+    },
+    "spec": {},
+    "status": {
+      "actualReplicas": 1,
+      "desiredReplicas": 1,
+      "conditions": [
+        {
+          "type": "Active",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:20Z"
+        },
+        {
+          "type": "ContainerHealthy",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:20Z"
+        },
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:20Z"
+        },
+        {
+          "type": "ResourcesAvailable",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:20Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Revision",
+    "metadata": {
+      "name": "order-processor-00002",
+      "namespace": "knect-e2e",
+      "uid": "uid-rev-order-00002",
+      "creationTimestamp": "2026-10-31T21:33:20Z",
+      "labels": {
+        "serving.knative.dev/configuration": "order-processor",
+        "serving.knative.dev/configurationGeneration": "2",
+        "serving.knative.dev/service": "order-processor"
+      },
+      "ownerReferences": [
+        {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Configuration",
+          "name": "order-processor",
+          "uid": "uid-config-order",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {},
+    "status": {
+      "actualReplicas": 0,
+      "desiredReplicas": 0,
+      "conditions": [
+        {
+          "type": "Active",
+          "status": "False",
+          "lastTransitionTime": "2026-10-31T21:34:21Z"
+        },
+        {
+          "type": "ContainerHealthy",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:20Z"
+        },
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:20Z"
+        },
+        {
+          "type": "ResourcesAvailable",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:20Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Revision",
+    "metadata": {
+      "name": "order-processor-00003",
+      "namespace": "knect-e2e",
+      "uid": "uid-rev-order-00003",
+      "creationTimestamp": "2026-10-31T21:33:30Z",
+      "labels": {
+        "serving.knative.dev/configuration": "order-processor",
+        "serving.knative.dev/configurationGeneration": "3",
+        "serving.knative.dev/service": "order-processor"
+      },
+      "ownerReferences": [
+        {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Configuration",
+          "name": "order-processor",
+          "uid": "uid-config-order",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {},
+    "status": {
+      "actualReplicas": 0,
+      "desiredReplicas": 1,
+      "conditions": [
+        {
+          "type": "Active",
+          "status": "False",
+          "lastTransitionTime": "2026-10-31T21:35:00Z"
+        },
+        {
+          "type": "ContainerHealthy",
+          "status": "False",
+          "reason": "ExitCode1",
+          "message": "Back-off restarting failed container: CrashLoopBackOff",
+          "lastTransitionTime": "2026-10-31T21:35:00Z"
+        },
+        {
+          "type": "Ready",
+          "status": "False",
+          "reason": "ProgressDeadlineExceeded",
+          "message": "Revision failed to become ready in time",
+          "lastTransitionTime": "2026-10-31T21:35:00Z"
+        },
+        {
+          "type": "ResourcesAvailable",
+          "status": "False",
+          "reason": "ProgressDeadlineExceeded",
+          "message": "Revision failed to become ready in time",
+          "lastTransitionTime": "2026-10-31T21:35:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "inventory-service",
+      "namespace": "knect-e2e",
+      "uid": "uid-kservice-inventory",
+      "creationTimestamp": "2026-10-31T21:40:00Z",
+      "labels": { "app": "inventory-service" }
+    },
+    "spec": {},
+    "status": {
+      "url": "http://inventory-service.knect-e2e.sslip.io",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:41:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Route",
+    "metadata": {
+      "name": "inventory-service",
+      "namespace": "knect-e2e",
+      "uid": "uid-route-inventory",
+      "creationTimestamp": "2026-10-31T21:40:00Z"
+    },
+    "spec": {
+      "traffic": [
+        {
+          "latestRevision": true,
+          "percent": 100,
+          "revisionName": "inventory-service-00001"
+        }
+      ]
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:41:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Configuration",
+    "metadata": {
+      "name": "inventory-service",
+      "namespace": "knect-e2e",
+      "uid": "uid-config-inventory",
+      "creationTimestamp": "2026-10-31T21:40:00Z"
+    },
+    "spec": {},
+    "status": {
+      "latestCreatedRevisionName": "inventory-service-00001",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:41:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Revision",
+    "metadata": {
+      "name": "inventory-service-00001",
+      "namespace": "knect-e2e",
+      "uid": "uid-rev-inventory-00001",
+      "creationTimestamp": "2026-10-31T21:40:10Z",
+      "labels": {
+        "serving.knative.dev/configuration": "inventory-service",
+        "serving.knative.dev/service": "inventory-service"
+      }
+    },
+    "spec": {},
+    "status": {
+      "actualReplicas": 0,
+      "desiredReplicas": 1,
+      "conditions": [
+        {
+          "type": "Active",
+          "status": "Unknown",
+          "lastTransitionTime": "2026-10-31T21:41:00Z"
+        },
+        {
+          "type": "Ready",
+          "status": "Unknown",
+          "lastTransitionTime": "2026-10-31T21:41:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "autoscaling.knative.dev/v1",
+    "kind": "PodAutoscaler",
+    "metadata": {
+      "name": "order-processor-00001",
+      "namespace": "knect-e2e",
+      "uid": "uid-pa-order-00001",
+      "creationTimestamp": "2026-10-31T21:33:10Z",
+      "annotations": { "autoscaling.knative.dev/class": "KPA" },
+      "ownerReferences": [
+        {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Revision",
+          "name": "order-processor-00001",
+          "uid": "uid-rev-order-00001",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {
+      "scaleTargetRef": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "name": "order-processor-00001-deployment"
+      }
+    },
+    "status": {
+      "actualScale": 1,
+      "desiredScale": 1,
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:20Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "autoscaling.knative.dev/v1",
+    "kind": "PodAutoscaler",
+    "metadata": {
+      "name": "order-processor-00002",
+      "namespace": "knect-e2e",
+      "uid": "uid-pa-order-00002",
+      "creationTimestamp": "2026-10-31T21:33:20Z",
+      "annotations": { "autoscaling.knative.dev/class": "KPA" }
+    },
+    "spec": {
+      "scaleTargetRef": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "name": "order-processor-00002-deployment"
+      }
+    },
+    "status": {
+      "actualScale": 0,
+      "desiredScale": 0,
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:21Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "autoscaling.knative.dev/v1",
+    "kind": "PodAutoscaler",
+    "metadata": {
+      "name": "order-processor-00003",
+      "namespace": "knect-e2e",
+      "uid": "uid-pa-order-00003",
+      "creationTimestamp": "2026-10-31T21:33:30Z",
+      "annotations": { "autoscaling.knative.dev/class": "KPA" }
+    },
+    "spec": {
+      "scaleTargetRef": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "name": "order-processor-00003-deployment"
+      }
+    },
+    "status": {
+      "actualScale": 1,
+      "desiredScale": 1,
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "False",
+          "lastTransitionTime": "2026-10-31T21:35:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "autoscaling.knative.dev/v1",
+    "kind": "PodAutoscaler",
+    "metadata": {
+      "name": "inventory-service-00001",
+      "namespace": "knect-e2e",
+      "uid": "uid-pa-inventory-00001",
+      "creationTimestamp": "2026-10-31T21:40:10Z",
+      "annotations": { "autoscaling.knative.dev/class": "HPA" }
+    },
+    "spec": {
+      "scaleTargetRef": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "name": "inventory-service-00001-deployment"
+      }
+    },
+    "status": {
+      "actualScale": 0,
+      "desiredScale": 1,
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "Unknown",
+          "lastTransitionTime": "2026-10-31T21:41:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "name": "order-processor-00001-deployment",
+      "namespace": "knect-e2e",
+      "uid": "uid-deploy-order-00001",
+      "creationTimestamp": "2026-10-31T21:33:10Z"
+    },
+    "spec": {
+      "replicas": 1,
+      "selector": {
+        "matchLabels": {
+          "serving.knative.dev/revisionUID": "uid-rev-order-00001"
+        }
+      }
+    },
+    "status": {
+      "readyReplicas": 1,
+      "replicas": 1,
+      "conditions": [
+        {
+          "type": "Available",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:20Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "name": "order-processor-00002-deployment",
+      "namespace": "knect-e2e",
+      "uid": "uid-deploy-order-00002",
+      "creationTimestamp": "2026-10-31T21:33:20Z"
+    },
+    "spec": {
+      "replicas": 0,
+      "selector": {
+        "matchLabels": {
+          "serving.knative.dev/revisionUID": "uid-rev-order-00002"
+        }
+      }
+    },
+    "status": {
+      "readyReplicas": 0,
+      "replicas": 0,
+      "conditions": [
+        {
+          "type": "Available",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:21Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "name": "order-processor-00003-deployment",
+      "namespace": "knect-e2e",
+      "uid": "uid-deploy-order-00003",
+      "creationTimestamp": "2026-10-31T21:33:30Z"
+    },
+    "spec": {
+      "replicas": 1,
+      "selector": {
+        "matchLabels": {
+          "serving.knative.dev/revisionUID": "uid-rev-order-00003"
+        }
+      }
+    },
+    "status": {
+      "readyReplicas": 0,
+      "replicas": 1,
+      "conditions": [
+        {
+          "type": "Available",
+          "status": "False",
+          "reason": "MinimumReplicasUnavailable",
+          "lastTransitionTime": "2026-10-31T21:35:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "name": "inventory-service-00001-deployment",
+      "namespace": "knect-e2e",
+      "uid": "uid-deploy-inventory-00001",
+      "creationTimestamp": "2026-10-31T21:40:10Z"
+    },
+    "spec": {
+      "replicas": 1,
+      "selector": {
+        "matchLabels": {
+          "serving.knative.dev/revisionUID": "uid-rev-inventory-00001"
+        }
+      }
+    },
+    "status": {
+      "readyReplicas": 0,
+      "replicas": 1,
+      "conditions": [
+        {
+          "type": "Available",
+          "status": "False",
+          "reason": "MinimumReplicasUnavailable",
+          "lastTransitionTime": "2026-10-31T21:41:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "order-processor-00001-abc",
+      "namespace": "knect-e2e",
+      "uid": "uid-pod-order-00001",
+      "creationTimestamp": "2026-10-31T21:33:15Z",
+      "labels": {
+        "serving.knative.dev/revisionUID": "uid-rev-order-00001"
+      },
+      "ownerReferences": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "order-processor-00001-deployment",
+          "uid": "uid-deploy-order-00001",
+          "controller": true
+        }
+      ]
+    },
+    "spec": { "containers": [{ "name": "user-container", "image": "example/order" }] },
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:20Z"
+        }
+      ],
+      "containerStatuses": [{ "name": "user-container", "restartCount": 0 }]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "order-processor-00003-def",
+      "namespace": "knect-e2e",
+      "uid": "uid-pod-order-00003",
+      "creationTimestamp": "2026-10-31T21:33:35Z",
+      "labels": {
+        "serving.knative.dev/revisionUID": "uid-rev-order-00003"
+      },
+      "ownerReferences": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "order-processor-00003-deployment",
+          "uid": "uid-deploy-order-00003",
+          "controller": true
+        }
+      ]
+    },
+    "spec": { "containers": [{ "name": "user-container", "image": "example/order" }] },
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "False",
+          "lastTransitionTime": "2026-10-31T21:35:00Z"
+        }
+      ],
+      "containerStatuses": [
+        {
+          "name": "user-container",
+          "restartCount": 3,
+          "state": { "waiting": { "reason": "CrashLoopBackOff" } }
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "inventory-service-00001-ghi",
+      "namespace": "knect-e2e",
+      "uid": "uid-pod-inventory-00001",
+      "creationTimestamp": "2026-10-31T21:40:15Z",
+      "labels": {
+        "serving.knative.dev/revisionUID": "uid-rev-inventory-00001"
+      },
+      "ownerReferences": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "inventory-service-00001-deployment",
+          "uid": "uid-deploy-inventory-00001",
+          "controller": true
+        }
+      ]
+    },
+    "spec": { "containers": [{ "name": "user-container", "image": "example/inventory" }] },
+    "status": {
+      "phase": "Pending",
+      "containerStatuses": [{ "name": "user-container", "restartCount": 0 }]
+    }
+  }
+]
