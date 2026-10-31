@@ -10,7 +10,17 @@ authors.workspace = true
 description = "Terminal UI and CLI for knect"
 publish = false
 
+[[bin]]
+name = "knect"
+path = "src/main.rs"
+
 [lints]
 workspace = true
 
 [dependencies]
+knect-proto = { path = "../knect-proto" }
+clap.workspace = true
+futures.workspace = true
+ratatui.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

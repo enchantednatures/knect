@@ -1,0 +1,499 @@
+#![expect(
+    clippy::result_large_err,
+    reason = "RpcError is the frozen protocol error object; boxing it at every internal call site would obscure the contract"
+)]
+
+//! JSON-RPC dispatcher with every frozen method registered.
+//!
+//! Foundation behavior:
+//! - `daemon.status`, `graph.get_topology`, `graph.refresh`, `config.get` work.
+//! - Every later method validates params, then returns a typed
+//!   `INTERNAL_ERROR` (or `ACTIONS_DISABLED` for write actions) that names the
+//!   pending task. Unknown methods and malformed envelopes use the standard
+//!   JSON-RPC codes.
+
+use knect_proto::error::{
+    ACTIONS_DISABLED, INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND, NOT_FOUND,
+};
+use knect_proto::rpc::JSONRPC_VERSION;
+use knect_proto::rpc::{
+    DaemonStatus, DaemonStatusParams, EmptyParams, EventsSubscribeParams, FlaggerControlParams,
+    GetDiffParams, GetNodeDetailsParams, GetTopologyParams, LogsStopParams, LogsSubscribeParams,
+    RefreshParams, RefreshResult, SetTrafficSplitParams, TapStartParams, TapStopParams,
+    TopologySection, ValidateManifestParams, methods,
+};
+use knect_proto::{ErrorData, RpcError, RpcRequest, RpcResponse};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use serde_json::Value;
+
+use crate::VERSION;
+use crate::app::AppState;
+
+/// Dispatches protocol requests against shared daemon state.
+#[derive(Clone)]
+pub struct RpcDispatcher {
+    state: AppState,
+}
+
+impl RpcDispatcher {
+    /// Creates a dispatcher for the given state.
+    #[must_use]
+    pub fn new(state: AppState) -> Self {
+        Self { state }
+    }
+
+    /// Returns every registered method name in contract order.
+    #[must_use]
+    pub const fn method_names() -> &'static [&'static str] {
+        methods::ALL
+    }
+
+    /// Dispatches one request.
+    ///
+    /// Returns `None` for notifications (a `null` request ID). Invalid
+    /// envelopes always produce a response, even with a `null` ID, matching the
+    /// JSON-RPC error rule.
+    #[must_use]
+    pub fn dispatch(&self, request: RpcRequest) -> Option<RpcResponse> {
+        let id = request.id.clone();
+        if request.jsonrpc != JSONRPC_VERSION {
+            return Some(RpcResponse::failure(
+                id,
+                RpcError::new(
+                    INVALID_REQUEST,
+                    format!(
+                        "jsonrpc must be \"{JSONRPC_VERSION}\", got \"{}\"",
+                        request.jsonrpc
+                    ),
+                ),
+            ));
+        }
+        let outcome = self.route(&request);
+        if request.id.is_null() {
+            return None;
+        }
+        Some(match outcome {
+            Ok(result) => RpcResponse::success(id, result),
+            Err(error) => RpcResponse::failure(id, error),
+        })
+    }
+
+    fn route(&self, request: &RpcRequest) -> Result<Value, RpcError> {
+        match request.method.as_str() {
+            methods::DAEMON_STATUS => {
+                let _: DaemonStatusParams = params_or_default(request)?;
+                encode(self.daemon_status())
+            }
+            methods::GRAPH_GET_TOPOLOGY => {
+                let params: GetTopologyParams = params_or_default(request)?;
+                encode(self.graph_topology(&params)?)
+            }
+            methods::GRAPH_GET_NODE_DETAILS => {
+                let _: GetNodeDetailsParams = required_params(request)?;
+                Err(pending("Task 6", &request.method))
+            }
+            methods::GRAPH_REFRESH => {
+                let _: RefreshParams = params_or_default(request)?;
+                encode(self.graph_refresh()?)
+            }
+            methods::MUTATIONS_GET_DIFF => {
+                let _: GetDiffParams = required_params(request)?;
+                Err(pending("Task 9", &request.method))
+            }
+            methods::ACTIONS_SET_TRAFFIC_SPLIT => {
+                let _: SetTrafficSplitParams = required_params(request)?;
+                self.actions_guard(&request.method)
+            }
+            methods::ACTIONS_FLAGGER_CONTROL => {
+                let _: FlaggerControlParams = required_params(request)?;
+                self.actions_guard(&request.method)
+            }
+            methods::POLICY_VALIDATE_MANIFEST => {
+                let _: ValidateManifestParams = required_params(request)?;
+                Err(pending("Task 11", &request.method))
+            }
+            methods::TAP_START => {
+                let _: TapStartParams = required_params(request)?;
+                Err(pending("Task 12", &request.method))
+            }
+            methods::TAP_STOP => {
+                let _: TapStopParams = required_params(request)?;
+                Err(pending("Task 12", &request.method))
+            }
+            methods::TAP_LIST => {
+                let _: EmptyParams = params_or_default(request)?;
+                Err(pending("Task 12", &request.method))
+            }
+            methods::LOGS_SUBSCRIBE => {
+                let _: LogsSubscribeParams = required_params(request)?;
+                Err(pending("Task 12", &request.method))
+            }
+            methods::LOGS_STOP => {
+                let _: LogsStopParams = required_params(request)?;
+                Err(pending("Task 12", &request.method))
+            }
+            methods::EVENTS_SUBSCRIBE => {
+                let _: EventsSubscribeParams = params_or_default(request)?;
+                Err(RpcError::with_data(
+                    INTERNAL_ERROR,
+                    "events.subscribe is not available on this transport",
+                    ErrorData {
+                        retryable: false,
+                        details: Some(
+                            "HTTP clients use GET /events; UDS JSONL subscriptions land with Task 5"
+                                .to_owned(),
+                        ),
+                        resource: None,
+                    },
+                ))
+            }
+            methods::CONFIG_GET => {
+                let _: EmptyParams = params_or_default(request)?;
+                encode(self.state.config.safe())
+            }
+            other => Err(RpcError::new(
+                METHOD_NOT_FOUND,
+                format!("unknown method '{other}'"),
+            )),
+        }
+    }
+
+    fn daemon_status(&self) -> DaemonStatus {
+        DaemonStatus {
+            version: VERSION.to_owned(),
+            schema_version: knect_proto::SCHEMA_VERSION,
+            context: self.state.context(),
+            generation: self.state.generation(),
+            watchers: self.state.watchers(),
+            uptime_secs: self.state.started_at.elapsed().as_secs(),
+            actions_enabled: self.state.actions_enabled(),
+            tap_count: 0,
+            started_at: Some(self.state.started_at_utc),
+            cache_enabled: self.state.config.cache.enabled,
+            last_resync: self.state.last_resync(),
+        }
+    }
+
+    fn graph_topology(
+        &self,
+        params: &GetTopologyParams,
+    ) -> Result<knect_proto::Topology, RpcError> {
+        if let Some(context) = params.context.as_deref()
+            && !context.is_empty()
+            && context != self.state.context()
+        {
+            return Err(RpcError::new(
+                NOT_FOUND,
+                format!("context '{context}' is not served by this daemon"),
+            ));
+        }
+        // `min_generation` is advisory: return the current generation
+        // immediately rather than blocking the dispatcher. Task 5 adds the
+        // bounded catch-up wait during recompute.
+        let mut topology = (*self.state.topology()).clone();
+        if let Some(include) = params.include.as_ref() {
+            if !include.contains(&TopologySection::Nodes) {
+                topology.nodes.clear();
+            }
+            if !include.contains(&TopologySection::Edges) {
+                topology.edges.clear();
+            }
+            if !include.contains(&TopologySection::Warnings) {
+                topology.warnings.clear();
+            }
+            if !include.contains(&TopologySection::Stats) {
+                topology.stats = knect_proto::graph::TopologyStats::default();
+            }
+        }
+        Ok(topology)
+    }
+
+    fn graph_refresh(&self) -> Result<RefreshResult, RpcError> {
+        let generation = self
+            .state
+            .generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .saturating_add(1);
+        let mut topology = (*self.state.topology()).clone();
+        topology.generation = generation;
+        self.state.set_topology(topology);
+        tracing::info!(generation, "graph.refresh bumped the generation");
+        Ok(RefreshResult { generation })
+    }
+
+    fn actions_guard(&self, method: &str) -> Result<Value, RpcError> {
+        if !self.state.actions_enabled() {
+            return Err(RpcError::with_data(
+                ACTIONS_DISABLED,
+                "guarded write actions are disabled",
+                ErrorData {
+                    retryable: false,
+                    details: Some(format!(
+                        "{method} requires daemon.allow_actions = true and actions.enabled = true"
+                    )),
+                    resource: None,
+                },
+            ));
+        }
+        Err(pending("Task 11", method))
+    }
+}
+
+fn encode<T: Serialize>(value: T) -> Result<Value, RpcError> {
+    serde_json::to_value(value).map_err(|error| {
+        RpcError::new(
+            INTERNAL_ERROR,
+            format!("cannot serialize method result: {error}"),
+        )
+    })
+}
+
+fn params_or_default<T: DeserializeOwned + Default>(request: &RpcRequest) -> Result<T, RpcError> {
+    match request.params.as_ref() {
+        None | Some(Value::Null) => Ok(T::default()),
+        Some(value) => serde_json::from_value(value.clone()).map_err(invalid_params),
+    }
+}
+
+fn required_params<T: DeserializeOwned>(request: &RpcRequest) -> Result<T, RpcError> {
+    match request.params.as_ref() {
+        None | Some(Value::Null) => Err(RpcError::new(
+            INVALID_PARAMS,
+            format!("method '{}' requires params", request.method),
+        )),
+        Some(value) => serde_json::from_value(value.clone()).map_err(invalid_params),
+    }
+}
+
+fn invalid_params(error: serde_json::Error) -> RpcError {
+    RpcError::new(INVALID_PARAMS, format!("invalid params: {error}"))
+}
+
+fn pending(task: &str, method: &str) -> RpcError {
+    RpcError::with_data(
+        INTERNAL_ERROR,
+        format!("{method} is not implemented in the foundation build"),
+        ErrorData {
+            retryable: false,
+            details: Some(format!("owned by {task}")),
+            resource: None,
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use knect_core::config::Config;
+    use serde_json::json;
+
+    fn state() -> AppState {
+        AppState::new(Config::default(), true)
+    }
+
+    fn request(method: &str, params: Option<Value>) -> RpcRequest {
+        RpcRequest::new(1_i64, method, params)
+    }
+
+    #[test]
+    fn every_method_is_registered() {
+        let dispatcher = RpcDispatcher::new(state());
+        for method in methods::ALL {
+            let response = dispatcher
+                .dispatch(request(method, None))
+                .expect("registered methods reply");
+            let code = response.error.as_ref().map(|error| error.code);
+            assert_ne!(
+                code,
+                Some(METHOD_NOT_FOUND),
+                "method {method} is not registered"
+            );
+            assert_ne!(code, Some(INVALID_REQUEST), "method {method} envelope");
+        }
+        assert_eq!(RpcDispatcher::method_names().len(), 15);
+    }
+
+    #[test]
+    fn unknown_method_is_method_not_found() {
+        let dispatcher = RpcDispatcher::new(state());
+        let response = dispatcher
+            .dispatch(request("bogus.method", None))
+            .expect("response");
+        assert_eq!(
+            response.error.map(|error| error.code),
+            Some(METHOD_NOT_FOUND)
+        );
+    }
+
+    #[test]
+    fn invalid_envelope_is_invalid_request() {
+        let dispatcher = RpcDispatcher::new(state());
+        let mut request = request(methods::DAEMON_STATUS, None);
+        request.jsonrpc = "1.0".to_owned();
+        let response = dispatcher.dispatch(request).expect("response");
+        assert_eq!(
+            response.error.map(|error| error.code),
+            Some(INVALID_REQUEST)
+        );
+    }
+
+    #[test]
+    fn malformed_params_are_invalid_params() {
+        let dispatcher = RpcDispatcher::new(state());
+        let response = dispatcher
+            .dispatch(request(
+                methods::GRAPH_GET_NODE_DETAILS,
+                Some(json!({"unexpected": true})),
+            ))
+            .expect("response");
+        assert_eq!(response.error.map(|error| error.code), Some(INVALID_PARAMS));
+    }
+
+    #[test]
+    fn daemon_status_reports_fixture_state() {
+        let dispatcher = RpcDispatcher::new(state());
+        let response = dispatcher
+            .dispatch(request(methods::DAEMON_STATUS, Some(json!({}))))
+            .expect("response");
+        let status: DaemonStatus =
+            serde_json::from_value(response.result.expect("result")).expect("status decodes");
+        assert_eq!(status.context, "fixture");
+        assert_eq!(status.generation, 0);
+        assert_eq!(status.schema_version, knect_proto::SCHEMA_VERSION);
+        assert_eq!(status.version, VERSION);
+        assert!(!status.actions_enabled);
+        assert!(status.watchers.is_empty());
+        assert!(status.cache_enabled);
+    }
+
+    #[test]
+    fn empty_topology_is_valid() {
+        let dispatcher = RpcDispatcher::new(state());
+        let response = dispatcher
+            .dispatch(request(methods::GRAPH_GET_TOPOLOGY, None))
+            .expect("response");
+        let topology: knect_proto::Topology =
+            serde_json::from_value(response.result.expect("result")).expect("topology decodes");
+        assert_eq!(topology.schema_version, knect_proto::SCHEMA_VERSION);
+        assert_eq!(topology.context, "fixture");
+        assert!(topology.nodes.is_empty());
+        assert!(topology.edges.is_empty());
+        assert_eq!(topology.stats.node_count, 0);
+        assert_eq!(topology.stats.edge_count, 0);
+    }
+
+    #[test]
+    fn include_filters_sections() {
+        let state = state();
+        let mut topology = crate::app::empty_topology("fixture", 0);
+        topology.stats.node_count = 3;
+        topology.stats.edge_count = 2;
+        state.set_topology(topology);
+        let dispatcher = RpcDispatcher::new(state);
+        let response = dispatcher
+            .dispatch(request(
+                methods::GRAPH_GET_TOPOLOGY,
+                Some(json!({"include": ["stats"]})),
+            ))
+            .expect("response");
+        let topology: knect_proto::Topology =
+            serde_json::from_value(response.result.expect("result")).expect("topology decodes");
+        assert!(topology.nodes.is_empty());
+        assert!(topology.edges.is_empty());
+        assert!(topology.warnings.is_empty());
+        assert_eq!(topology.stats.node_count, 3);
+    }
+
+    #[test]
+    fn wrong_context_is_not_found() {
+        let dispatcher = RpcDispatcher::new(state());
+        let response = dispatcher
+            .dispatch(request(
+                methods::GRAPH_GET_TOPOLOGY,
+                Some(json!({"context": "kind-other"})),
+            ))
+            .expect("response");
+        assert_eq!(response.error.map(|error| error.code), Some(NOT_FOUND));
+    }
+
+    #[test]
+    fn refresh_bumps_generation() {
+        let dispatcher = RpcDispatcher::new(state());
+        let response = dispatcher
+            .dispatch(request(methods::GRAPH_REFRESH, None))
+            .expect("response");
+        let refresh: RefreshResult =
+            serde_json::from_value(response.result.expect("result")).expect("refresh decodes");
+        assert_eq!(refresh.generation, 1);
+        assert_eq!(dispatcher.state.generation(), 1);
+    }
+
+    #[test]
+    fn config_get_returns_safe_config() {
+        let dispatcher = RpcDispatcher::new(state());
+        let response = dispatcher
+            .dispatch(request(methods::CONFIG_GET, None))
+            .expect("response");
+        let config: knect_proto::rpc::SafeConfig =
+            serde_json::from_value(response.result.expect("result")).expect("config decodes");
+        assert_eq!(config.daemon.http_addr, "127.0.0.1:7420");
+        assert_eq!(config.daemon.context, "fixture");
+        assert!(!config.actions.enabled);
+        let json = serde_json::to_string(&config).expect("serialize");
+        assert!(!json.contains("kubeconfig"));
+    }
+
+    #[test]
+    fn actions_are_disabled_by_default() {
+        let dispatcher = RpcDispatcher::new(state());
+        let response = dispatcher
+            .dispatch(request(
+                methods::ACTIONS_SET_TRAFFIC_SPLIT,
+                Some(json!({
+                    "namespace": "default",
+                    "service": "hello",
+                    "splits": []
+                })),
+            ))
+            .expect("response");
+        assert_eq!(
+            response.error.map(|error| error.code),
+            Some(ACTIONS_DISABLED)
+        );
+    }
+
+    #[test]
+    fn notifications_have_no_response() {
+        let dispatcher = RpcDispatcher::new(state());
+        let request = RpcRequest::notification(methods::DAEMON_STATUS, None);
+        assert!(dispatcher.dispatch(request).is_none());
+    }
+
+    #[test]
+    fn pending_methods_return_internal_error_with_task() {
+        let dispatcher = RpcDispatcher::new(state());
+        let response = dispatcher
+            .dispatch(request(
+                methods::MUTATIONS_GET_DIFF,
+                Some(json!({
+                    "id": {
+                        "api_version": "v1",
+                        "kind": "Pod",
+                        "namespace": "default",
+                        "name": "web"
+                    }
+                })),
+            ))
+            .expect("response");
+        let error = response.error.expect("error");
+        assert_eq!(error.code, INTERNAL_ERROR);
+        assert!(error.message.contains("mutations.get_diff"));
+        assert!(
+            error
+                .data
+                .and_then(|data| data.details)
+                .is_some_and(|details| details.contains("Task 9"))
+        );
+    }
+}
