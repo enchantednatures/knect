@@ -1,0 +1,36 @@
+# Agent workspace
+.omo/
+
+# Rust build output
+target/
+
+# Node
+node_modules/
+webui/dist/
+webui/.vite/
+
+# Database artifacts
+*.redb
+*.redb.lock
+
+# Local scratch
+/artifacts/
+/tmp/
+
+# Secrets / environment
+.env
+*.kubeconfig
+
+# OS
+.DS_Store
+
+# Build/dist output
+dist/
+charts/*.tgz
+
+# Coverage
+coverage/
+
+# Editors
+.idea/
+.vscode/
