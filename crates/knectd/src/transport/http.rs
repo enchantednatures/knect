@@ -65,7 +65,7 @@ async fn rpc_handler(State(state): State<AppState>, body: Bytes) -> Response {
             .into_response();
         }
     };
-    match RpcDispatcher::new(state).dispatch(request) {
+    match RpcDispatcher::new(state).dispatch_async(request).await {
         Some(response) => Json(response).into_response(),
         None => StatusCode::NO_CONTENT.into_response(),
     }
@@ -242,6 +242,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn events_replays_after_last_event_id() {
+        use knect_proto::events::{Heartbeat, SseEventKind};
+
+        let state = state();
+        let heartbeat = || SseEventKind::Heartbeat {
+            data: Heartbeat {
+                uptime_secs: 1,
+                generation: 0,
+                node_count: 0,
+                edge_count: 0,
+                ts: chrono::Utc::now(),
+            },
+        };
+        let first = state.events.publish(heartbeat());
+        let second = state.events.publish(heartbeat());
+        let response = router(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/events")
+                    .header("last-event-id", first.seq.to_string())
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let mut body = response.into_body();
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(1), body.frame())
+            .await
+            .expect("frame before timeout")
+            .expect("body frame")
+            .expect("data frame");
+        let data = frame.into_data().expect("data frame payload");
+        let text = String::from_utf8_lossy(&data);
+        assert!(text.contains(&format!("id: {}", second.seq)));
+        assert!(!text.contains(&format!("id: {}", first.seq)));
+    }
+
+    #[tokio::test]
     async fn events_sets_sse_headers() {
         let response = router(state())
             .oneshot(
@@ -262,7 +300,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn webui_root_serves_placeholder() {
+    async fn webui_root_serves_embedded_app() {
         let response = router(state())
             .oneshot(
                 Request::builder()
@@ -280,6 +318,7 @@ mod tests {
             .expect("body")
             .to_bytes();
         let html = String::from_utf8_lossy(&bytes);
-        assert!(html.contains("WebUI not built"));
+        assert!(html.contains("id=\"app\""));
+        assert!(!html.contains("WebUI not built"));
     }
 }

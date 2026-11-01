@@ -1,0 +1,89 @@
+name: webui
+
+on:
+  push:
+    paths:
+      - 'webui/**'
+      - 'crates/knectd/src/webui.rs'
+      - 'crates/knectd/assets/webui/**'
+      - '.github/workflows/webui.yml'
+  pull_request:
+    paths:
+      - 'webui/**'
+      - 'crates/knectd/src/webui.rs'
+      - 'crates/knectd/assets/webui/**'
+      - '.github/workflows/webui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  webui:
+    name: webui
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Install dependencies (locked)
+        working-directory: webui
+        run: npm ci
+
+      - name: Type and Svelte check
+        working-directory: webui
+        run: npm run check
+
+      - name: Unit tests
+        working-directory: webui
+        run: npm test -- --run
+
+      - name: Build bundle
+        working-directory: webui
+        run: npm run build
+
+      - name: Verify committed embed output is current
+        working-directory: webui
+        run: |
+          npm run embed
+          git status --porcelain -- ../crates/knectd/assets/webui
+          test -z "$(git status --porcelain -- ../crates/knectd/assets/webui)"
+
+      - name: Install Playwright Chromium
+        working-directory: webui
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser checks
+        working-directory: webui
+        run: npx playwright test
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Embed and fallback tests
+        run: cargo test -p knectd webui --locked
+
+      - name: Build daemon with embedded assets
+        run: cargo build -p knectd --locked
+
+      - name: Upload WebUI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webui-screenshots
+          path: artifacts/webui*.png
+          if-no-files-found: warn
+          retention-days: 7

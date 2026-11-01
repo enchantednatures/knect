@@ -1,7 +1,8 @@
 //! Unix domain socket listener supporting HTTP/1.1 and JSONL framing.
 //!
-//! The socket is mode `0600`. A guard removes it on graceful shutdown. Peer UID
-//! validation is Task 5; the foundation relies on filesystem permissions.
+//! The socket is mode `0600`. A guard removes it on graceful shutdown. On Linux
+//! the peer's UID must equal the socket file owner's UID; other peers are
+//! rejected before any request is read.
 
 use std::path::{Path, PathBuf};
 
@@ -70,6 +71,11 @@ pub async fn serve(
     cancel: CancellationToken,
 ) -> Result<(), DaemonError> {
     let listener = bind_socket(&path).await?;
+    #[cfg(target_os = "linux")]
+    let owner_uid = {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata(&path).ok().map(|metadata| metadata.uid())
+    };
     let guard = SocketGuard { path };
     tracing::info!(path = %guard.path.display(), "UDS listener started");
 
@@ -84,6 +90,18 @@ pub async fn serve(
                         continue;
                     }
                 };
+                #[cfg(target_os = "linux")]
+                {
+                    let peer = stream.peer_cred().ok().map(|cred| cred.uid());
+                    if !peer_uid_allowed(peer, owner_uid) {
+                        tracing::warn!(
+                            ?peer,
+                            ?owner_uid,
+                            "rejecting UDS peer with a different UID"
+                        );
+                        continue;
+                    }
+                }
                 let state = state.clone();
                 let router = router(state.clone());
                 tokio::spawn(async move {
@@ -136,6 +154,15 @@ where
         .map_err(|error| DaemonError::Transport(format!("UDS HTTP connection failed: {error}")))
 }
 
+/// Returns true when the peer UID matches the socket owner.
+///
+/// A missing peer credential or owner UID is rejected: the daemon must be able
+/// to prove the peer is the same local user before serving it.
+#[cfg(target_os = "linux")]
+fn peer_uid_allowed(peer_uid: Option<u32>, owner_uid: Option<u32>) -> bool {
+    matches!((peer_uid, owner_uid), (Some(peer), Some(owner)) if peer == owner)
+}
+
 struct SocketGuard {
     path: PathBuf,
 }
@@ -152,6 +179,15 @@ mod tests {
     use knect_core::config::Config;
     use std::time::Duration;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn peer_uid_must_match_the_socket_owner() {
+        assert!(peer_uid_allowed(Some(1000), Some(1000)));
+        assert!(!peer_uid_allowed(Some(1001), Some(1000)));
+        assert!(!peer_uid_allowed(None, Some(1000)));
+        assert!(!peer_uid_allowed(Some(1000), None));
+    }
 
     #[cfg(unix)]
     #[tokio::test]

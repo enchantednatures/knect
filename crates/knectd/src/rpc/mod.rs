@@ -13,21 +13,22 @@
 //!   JSON-RPC codes.
 
 use knect_proto::error::{
-    ACTIONS_DISABLED, INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND, NOT_FOUND,
+    ACTIONS_DISABLED, INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND,
 };
 use knect_proto::rpc::JSONRPC_VERSION;
 use knect_proto::rpc::{
-    DaemonStatus, DaemonStatusParams, EmptyParams, EventsSubscribeParams, FlaggerControlParams,
-    GetDiffParams, GetNodeDetailsParams, GetTopologyParams, LogsStopParams, LogsSubscribeParams,
-    RefreshParams, RefreshResult, SetTrafficSplitParams, TapStartParams, TapStopParams,
-    TopologySection, ValidateManifestParams, methods,
+    DaemonStatusParams, EmptyParams, EventsSubscribeParams, FlaggerControlParams, GetDiffParams,
+    GetNodeDetailsParams, GetTopologyParams, LogsStopParams, LogsSubscribeParams, RefreshParams,
+    SetTrafficSplitParams, TapStartParams, TapStopParams, ValidateManifestParams, methods,
 };
 use knect_proto::{ErrorData, RpcError, RpcRequest, RpcResponse};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::VERSION;
+pub mod daemon;
+pub mod graph;
+
 use crate::app::AppState;
 
 /// Dispatches protocol requests against shared daemon state.
@@ -56,6 +57,12 @@ impl RpcDispatcher {
     /// JSON-RPC error rule.
     #[must_use]
     pub fn dispatch(&self, request: RpcRequest) -> Option<RpcResponse> {
+        futures::executor::block_on(self.dispatch_async(request))
+    }
+
+    /// Dispatches one request without blocking the caller's async worker.
+    #[must_use]
+    pub async fn dispatch_async(&self, request: RpcRequest) -> Option<RpcResponse> {
         let id = request.id.clone();
         if request.jsonrpc != JSONRPC_VERSION {
             return Some(RpcResponse::failure(
@@ -69,7 +76,7 @@ impl RpcDispatcher {
                 ),
             ));
         }
-        let outcome = self.route(&request);
+        let outcome = self.route(&request).await;
         if request.id.is_null() {
             return None;
         }
@@ -79,23 +86,23 @@ impl RpcDispatcher {
         })
     }
 
-    fn route(&self, request: &RpcRequest) -> Result<Value, RpcError> {
+    async fn route(&self, request: &RpcRequest) -> Result<Value, RpcError> {
         match request.method.as_str() {
             methods::DAEMON_STATUS => {
                 let _: DaemonStatusParams = params_or_default(request)?;
-                encode(self.daemon_status())
+                encode(daemon::status(&self.state).await)
             }
             methods::GRAPH_GET_TOPOLOGY => {
                 let params: GetTopologyParams = params_or_default(request)?;
-                encode(self.graph_topology(&params)?)
+                encode(graph::get_topology(&self.state, &params).await?)
             }
             methods::GRAPH_GET_NODE_DETAILS => {
-                let _: GetNodeDetailsParams = required_params(request)?;
-                Err(pending("Task 6", &request.method))
+                let params: GetNodeDetailsParams = required_params(request)?;
+                encode(graph::get_node_details(&self.state, &params).await?)
             }
             methods::GRAPH_REFRESH => {
                 let _: RefreshParams = params_or_default(request)?;
-                encode(self.graph_refresh()?)
+                encode(daemon::refresh(&self.state))
             }
             methods::MUTATIONS_GET_DIFF => {
                 let _: GetDiffParams = required_params(request)?;
@@ -157,69 +164,6 @@ impl RpcDispatcher {
                 format!("unknown method '{other}'"),
             )),
         }
-    }
-
-    fn daemon_status(&self) -> DaemonStatus {
-        DaemonStatus {
-            version: VERSION.to_owned(),
-            schema_version: knect_proto::SCHEMA_VERSION,
-            context: self.state.context(),
-            generation: self.state.generation(),
-            watchers: self.state.watchers(),
-            uptime_secs: self.state.started_at.elapsed().as_secs(),
-            actions_enabled: self.state.actions_enabled(),
-            tap_count: 0,
-            started_at: Some(self.state.started_at_utc),
-            cache_enabled: self.state.config.cache.enabled,
-            last_resync: self.state.last_resync(),
-        }
-    }
-
-    fn graph_topology(
-        &self,
-        params: &GetTopologyParams,
-    ) -> Result<knect_proto::Topology, RpcError> {
-        if let Some(context) = params.context.as_deref()
-            && !context.is_empty()
-            && context != self.state.context()
-        {
-            return Err(RpcError::new(
-                NOT_FOUND,
-                format!("context '{context}' is not served by this daemon"),
-            ));
-        }
-        // `min_generation` is advisory: return the current generation
-        // immediately rather than blocking the dispatcher. Task 5 adds the
-        // bounded catch-up wait during recompute.
-        let mut topology = (*self.state.topology()).clone();
-        if let Some(include) = params.include.as_ref() {
-            if !include.contains(&TopologySection::Nodes) {
-                topology.nodes.clear();
-            }
-            if !include.contains(&TopologySection::Edges) {
-                topology.edges.clear();
-            }
-            if !include.contains(&TopologySection::Warnings) {
-                topology.warnings.clear();
-            }
-            if !include.contains(&TopologySection::Stats) {
-                topology.stats = knect_proto::graph::TopologyStats::default();
-            }
-        }
-        Ok(topology)
-    }
-
-    fn graph_refresh(&self) -> Result<RefreshResult, RpcError> {
-        let generation = self
-            .state
-            .generation
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            .saturating_add(1);
-        let mut topology = (*self.state.topology()).clone();
-        topology.generation = generation;
-        self.state.set_topology(topology);
-        tracing::info!(generation, "graph.refresh bumped the generation");
-        Ok(RefreshResult { generation })
     }
 
     fn actions_guard(&self, method: &str) -> Result<Value, RpcError> {
@@ -285,7 +229,10 @@ fn pending(task: &str, method: &str) -> RpcError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::VERSION;
     use knect_core::config::Config;
+    use knect_proto::error::NOT_FOUND;
+    use knect_proto::rpc::{DaemonStatus, RefreshResult};
     use serde_json::json;
 
     fn state() -> AppState {
@@ -418,15 +365,15 @@ mod tests {
     }
 
     #[test]
-    fn refresh_bumps_generation() {
+    fn refresh_signals_without_faking_a_rebuild() {
         let dispatcher = RpcDispatcher::new(state());
         let response = dispatcher
             .dispatch(request(methods::GRAPH_REFRESH, None))
             .expect("response");
         let refresh: RefreshResult =
             serde_json::from_value(response.result.expect("result")).expect("refresh decodes");
-        assert_eq!(refresh.generation, 1);
-        assert_eq!(dispatcher.state.generation(), 1);
+        assert_eq!(refresh.generation, dispatcher.state.generation());
+        assert_eq!(dispatcher.state.generation(), 0);
     }
 
     #[test]
@@ -468,6 +415,78 @@ mod tests {
         let dispatcher = RpcDispatcher::new(state());
         let request = RpcRequest::notification(methods::DAEMON_STATUS, None);
         assert!(dispatcher.dispatch(request).is_none());
+    }
+
+    #[tokio::test]
+    async fn node_details_returns_redacted_yaml_and_empty_sections() {
+        use knect_proto::graph::{Health, NodeCategory};
+        use knect_proto::{ResourceId, ResourceNode};
+        use kube::api::{ApiResource, DynamicObject};
+
+        let state = state();
+        let object = DynamicObject::new(
+            "hello",
+            &ApiResource {
+                group: "serving.knative.dev".to_owned(),
+                version: "v1".to_owned(),
+                api_version: "serving.knative.dev/v1".to_owned(),
+                kind: "Service".to_owned(),
+                plural: "services".to_owned(),
+            },
+        );
+        let id = knect_core::store::resource_id(&object);
+        state.store.write().await.upsert(object);
+        let mut topology = crate::app::empty_topology("fixture", 1);
+        topology.nodes.push(ResourceNode {
+            id: id.clone(),
+            category: NodeCategory::KService,
+            name: "hello".to_owned(),
+            namespace: Some("default".to_owned()),
+            health: Health::Healthy,
+            summary: "ready".to_owned(),
+            labels: Default::default(),
+            annotations: Default::default(),
+            badges: Vec::new(),
+            uid: None,
+            first_seen: chrono::Utc::now(),
+            last_seen: chrono::Utc::now(),
+        });
+        topology.stats.node_count = 1;
+        state.set_topology(topology);
+        let dispatcher = RpcDispatcher::new(state);
+
+        let response = dispatcher
+            .dispatch_async(request(
+                methods::GRAPH_GET_NODE_DETAILS,
+                Some(json!({"id": id, "include_yaml": true})),
+            ))
+            .await
+            .expect("response");
+        assert!(response.error.is_none());
+        let details: knect_proto::graph::NodeDetails =
+            serde_json::from_value(response.result.expect("result")).expect("details decode");
+        assert!(details.yaml_redacted);
+        assert!(
+            details
+                .yaml
+                .as_deref()
+                .is_some_and(|yaml| yaml.contains("kind: Service"))
+        );
+        assert!(details.links.is_empty());
+        assert!(details.policies.is_empty());
+        assert!(details.storage.is_empty());
+        assert!(details.mutations.is_empty());
+
+        let missing =
+            ResourceId::namespaced("serving.knative.dev/v1", "Service", "default", "absent");
+        let response = dispatcher
+            .dispatch_async(request(
+                methods::GRAPH_GET_NODE_DETAILS,
+                Some(json!({"id": missing})),
+            ))
+            .await
+            .expect("response");
+        assert_eq!(response.error.map(|error| error.code), Some(NOT_FOUND));
     }
 
     #[test]

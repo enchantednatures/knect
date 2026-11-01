@@ -41,11 +41,11 @@ async fn main() -> Result<(), E2eError> {
         Some(name) => {
             println!("running scenario {name}");
             run_scenario(&name, &harness).await?;
-            println!("scenario {name} passed (skeleton)");
+            println!("scenario {name} passed");
         }
         None => {
             run_all(&harness).await?;
-            println!("all {} scenarios passed (skeleton)", SCENARIOS.len());
+            println!("all {} scenarios passed", SCENARIOS.len());
         }
     }
     Ok(())

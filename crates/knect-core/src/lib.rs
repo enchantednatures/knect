@@ -22,16 +22,18 @@ pub mod links;
 pub mod mutations;
 pub mod operators;
 pub mod policy;
+pub mod secret;
 pub mod storage;
 pub mod store;
 pub mod tap;
 
 pub use actions::{ActionExecutor, DisabledActions};
-pub use cache::{NoopCache, SnapshotCache};
+pub use cache::{NoopCache, RedbCache, SnapshotCache, open_redb_cache, snapshot_limit_bytes};
 pub use config::{Config, ConfigOverrides};
 pub use error::CoreError;
 pub use graph::{GraphBuilder, GraphEngine};
 pub use kube::{ClusterReader, DiscoverySnapshot, DryRunResult, KubeReader, LogOptions};
+pub use secret::SecretMaterialRegistry;
 pub use store::{ResourceStore, StoreEvent};
 pub use tap::{NoopTapManager, TapManager};
 

@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 use crate::error::CoreError;
 use crate::graph::GraphBuilder;
+use crate::secret::SecretMaterialRegistry;
 use crate::store::ResourceStore;
 
 /// Inputs shared by every correlator in one recompute generation.
@@ -29,17 +30,43 @@ pub struct CorrelationContext {
     pub generation: u64,
     /// Sanitized resource store snapshot.
     pub store: Arc<ResourceStore>,
+    /// Secret material observed by watchers, keyed by resource identity.
+    pub secret_material: Arc<SecretMaterialRegistry>,
 }
 
 impl CorrelationContext {
     /// Creates a correlation context.
     #[must_use]
     pub fn new(context: impl Into<String>, generation: u64, store: Arc<ResourceStore>) -> Self {
+        Self::new_with_secrets(
+            context,
+            generation,
+            store,
+            Arc::new(SecretMaterialRegistry::new()),
+        )
+    }
+
+    /// Creates a correlation context with an explicit Secret registry.
+    #[must_use]
+    pub fn new_with_secrets(
+        context: impl Into<String>,
+        generation: u64,
+        store: Arc<ResourceStore>,
+        secret_material: Arc<SecretMaterialRegistry>,
+    ) -> Self {
         Self {
             context: context.into(),
             generation,
             store,
+            secret_material,
         }
+    }
+
+    /// Replaces the Secret registry.
+    #[must_use]
+    pub fn with_secret_material(mut self, registry: Arc<SecretMaterialRegistry>) -> Self {
+        self.secret_material = registry;
+        self
     }
 }
 

@@ -5,10 +5,12 @@
 //! down gracefully. Fixture mode never constructs a Kubernetes client.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
 use clap::Parser;
 use knect_core::config::{Config, ConfigOverrides};
+use knect_core::{NoopCache, RedbCache, SnapshotCache, snapshot_limit_bytes};
 use knectd::app::AppState;
 use knectd::error::DaemonError;
 use knectd::fixture::FixtureMode;
@@ -86,7 +88,27 @@ async fn main() -> anyhow::Result<()> {
     knectd::logging::init(&config).context("cannot initialize logging")?;
 
     let fixture = args.fixture_mode();
-    let state = AppState::new(config.clone(), fixture.is_enabled());
+    let cache: Arc<dyn SnapshotCache> = if config.cache.enabled && !fixture.is_enabled() {
+        let cache_dir = PathBuf::from(&config.daemon.cache_dir);
+        let limit = snapshot_limit_bytes(config.cache.max_snapshot_bytes);
+        match RedbCache::open(&cache_dir, limit) {
+            Ok(cache) => {
+                tracing::info!(path = %cache_dir.display(), "snapshot cache opened");
+                Arc::new(cache)
+            }
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    path = %cache_dir.display(),
+                    "snapshot cache unavailable; continuing without persistence"
+                );
+                Arc::new(NoopCache)
+            }
+        }
+    } else {
+        Arc::new(NoopCache)
+    };
+    let state = AppState::new(config.clone(), fixture.is_enabled()).with_cache(cache);
     let socket_path = PathBuf::from(&config.daemon.socket_path);
     let http_addr = config.daemon.http_addr.clone();
     let cancel = CancellationToken::new();
@@ -100,7 +122,8 @@ async fn main() -> anyhow::Result<()> {
         "starting knectd"
     );
 
-    let runtime = Runtime::new(state.clone(), fixture.clone(), cancel.clone());
+    let runtime = Runtime::new(state.clone(), fixture.clone(), cancel.clone())
+        .with_kubeconfig(args.kubeconfig.clone());
     runtime.start().await.context("runtime startup failed")?;
 
     let mut tasks: JoinSet<Result<(), DaemonError>> = JoinSet::new();

@@ -17,10 +17,13 @@ workspace = true
 knect-proto = { path = "../knect-proto" }
 chrono.workspace = true
 directories.workspace = true
+fs2.workspace = true
 futures.workspace = true
 k8s-openapi.workspace = true
 kube.workspace = true
 petgraph.workspace = true
+redb.workspace = true
+rmp-serde.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

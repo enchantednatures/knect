@@ -12,13 +12,16 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use knect_core::config::Config;
+use knect_core::graph::diff_topologies;
 use knect_core::store::ResourceStore;
 use knect_core::{
-    ActionExecutor, DisabledActions, NoopCache, NoopTapManager, SnapshotCache, TapManager,
+    ActionExecutor, DisabledActions, NoopCache, NoopTapManager, SecretMaterialRegistry,
+    SnapshotCache, TapManager,
 };
 use knect_proto::events::{Heartbeat, SseEvent, SseEventKind};
 use knect_proto::graph::Topology;
 use knect_proto::rpc::WatcherStatus;
+use tokio::sync::Notify;
 use tokio::sync::RwLock as AsyncRwLock;
 
 use crate::transport::sse::EventHub;
@@ -32,8 +35,10 @@ pub struct AppState {
     pub topology: Arc<RwLock<Arc<Topology>>>,
     /// Sanitized resource store.
     pub store: Arc<AsyncRwLock<ResourceStore>>,
-    /// Snapshot cache. Foundation implementation is [`NoopCache`].
+    /// Snapshot cache. Defaults to [`NoopCache`]; production wires [`crate::runtime::Runtime`].
     pub cache: Arc<dyn SnapshotCache>,
+    /// In-memory Secret material observed by watchers.
+    pub secret_material: Arc<SecretMaterialRegistry>,
     /// Guarded action executor. Foundation implementation is [`DisabledActions`].
     pub actions: Arc<dyn ActionExecutor>,
     /// Tap manager. Foundation implementation is [`NoopTapManager`].
@@ -48,8 +53,10 @@ pub struct AppState {
     pub events: Arc<EventHub>,
     /// Watcher health. Empty until Task 3.
     pub watchers: Arc<RwLock<Vec<WatcherStatus>>>,
-    /// Last discovery resync time. Set by fixture startup; Task 3 updates it.
+    /// Last discovery resync time. Set by fixture startup and the runtime.
     pub last_resync: Arc<RwLock<Option<DateTime<Utc>>>>,
+    /// Wake-up signal for `graph.refresh` and manual rediscovery.
+    pub refresh: Arc<Notify>,
     /// True when the daemon runs from fixtures and never contacts Kubernetes.
     pub fixture: bool,
     /// Per-client heartbeat cadence.
@@ -70,6 +77,7 @@ impl AppState {
             topology: Arc::new(RwLock::new(Arc::new(topology))),
             store: Arc::new(AsyncRwLock::new(ResourceStore::new())),
             cache: Arc::new(NoopCache),
+            secret_material: Arc::new(SecretMaterialRegistry::new()),
             actions: Arc::new(DisabledActions),
             tap: Arc::new(NoopTapManager),
             generation: Arc::new(AtomicU64::new(0)),
@@ -78,6 +86,7 @@ impl AppState {
             events: Arc::new(EventHub::new(1_000)),
             watchers: Arc::new(RwLock::new(Vec::new())),
             last_resync: Arc::new(RwLock::new(None)),
+            refresh: Arc::new(Notify::new()),
             fixture,
             heartbeat_interval: Duration::from_secs(15),
         }
@@ -90,6 +99,35 @@ impl AppState {
         self
     }
 
+    /// Replaces the snapshot cache.
+    #[must_use]
+    pub fn with_cache(mut self, cache: Arc<dyn SnapshotCache>) -> Self {
+        self.cache = cache;
+        self
+    }
+
+    /// Replaces the in-memory Secret registry.
+    #[must_use]
+    pub fn with_secret_material(mut self, registry: Arc<SecretMaterialRegistry>) -> Self {
+        self.secret_material = registry;
+        self
+    }
+
+    /// Returns the in-memory Secret registry.
+    #[must_use]
+    pub fn secret_material(&self) -> Arc<SecretMaterialRegistry> {
+        Arc::clone(&self.secret_material)
+    }
+
+    /// Replaces watcher health snapshots.
+    pub fn set_watchers(&self, watchers: Vec<WatcherStatus>) {
+        let mut guard = match self.watchers.write() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *guard = watchers;
+    }
+
     /// Returns the current topology snapshot.
     #[must_use]
     pub fn topology(&self) -> Arc<Topology> {
@@ -97,6 +135,20 @@ impl AppState {
             Ok(guard) => Arc::clone(&guard),
             Err(poisoned) => Arc::clone(&poisoned.into_inner()),
         }
+    }
+
+    /// Replaces the topology and publishes a `GraphPatch` diffed against the
+    /// previous projection.
+    ///
+    /// The patch is built with a reserved sequence number so `GraphPatch.seq`
+    /// and the envelope `SseEvent.seq` are identical by construction.
+    pub fn set_topology_and_publish(&self, topology: Topology) -> SseEvent {
+        let previous = self.topology();
+        let seq = self.events.next_sequence();
+        let patch = diff_topologies(Some(&previous), &topology, seq, Utc::now());
+        self.set_topology(topology);
+        self.events
+            .publish_with_seq(seq, SseEventKind::GraphPatch { data: patch })
     }
 
     /// Replaces the topology and synchronizes the generation counter.
@@ -227,6 +279,44 @@ mod tests {
         state.set_topology(topology);
         assert_eq!(state.generation(), 9);
         assert_eq!(state.topology().stats.warning_count, 1);
+    }
+
+    #[test]
+    fn set_topology_and_publish_keeps_patch_and_envelope_sequences_equal() {
+        let state = AppState::new(Config::default(), true);
+        let mut receiver = state.events.subscribe();
+        let mut builder = knect_core::GraphBuilder::new("fixture").with_generation(1);
+        builder.add_node(knect_proto::ResourceNode {
+            id: knect_proto::ResourceId::namespaced(
+                "serving.knative.dev/v1",
+                "Service",
+                "default",
+                "hello",
+            ),
+            category: knect_proto::NodeCategory::KService,
+            name: "hello".to_owned(),
+            namespace: Some("default".to_owned()),
+            health: knect_proto::graph::Health::Healthy,
+            summary: "ready".to_owned(),
+            labels: Default::default(),
+            annotations: Default::default(),
+            badges: Vec::new(),
+            uid: None,
+            first_seen: Utc::now(),
+            last_seen: Utc::now(),
+        });
+        let topology = builder.build();
+        let event = state.set_topology_and_publish(topology);
+        assert_eq!(state.generation(), 1);
+        let received = receiver.try_recv().expect("patch broadcast");
+        assert_eq!(received.seq, event.seq);
+        match received.kind {
+            SseEventKind::GraphPatch { data } => {
+                assert_eq!(data.seq, received.seq);
+                assert_eq!(data.added_nodes.len(), 1);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
     }
 
     #[test]

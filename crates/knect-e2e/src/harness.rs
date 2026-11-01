@@ -1,6 +1,7 @@
 //! HTTP and UDS JSON-RPC harness helpers.
 
 use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -224,6 +225,275 @@ pub fn assert_event(event: &SseEvent, expected: &str) -> Result<(), HarnessError
         )));
     }
     Ok(())
+}
+
+/// Returns the repository fixture directory.
+#[must_use]
+pub fn repo_fixture_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("testdata/fixtures")
+}
+
+/// A fixture daemon spawned by the harness.
+#[derive(Debug)]
+pub struct FixtureDaemon {
+    child: Child,
+    socket: PathBuf,
+    http_base: String,
+    terminated: bool,
+}
+
+impl FixtureDaemon {
+    /// Spawns `knectd --fixture <fixture>` on a temporary socket and free port.
+    pub async fn spawn(fixture: &Path) -> Result<Self, HarnessError> {
+        if !fixture.exists() {
+            return Err(HarnessError::InvalidEndpoint(format!(
+                "fixture directory {} does not exist",
+                fixture.display()
+            )));
+        }
+        let binary = knectd_binary().await?;
+        let socket = temp_socket_path("fixture");
+        let port = free_port()?;
+        let http_addr = format!("127.0.0.1:{port}");
+        let child = Command::new(&binary)
+            .arg("--fixture")
+            .arg(fixture)
+            .arg("--socket-path")
+            .arg(&socket)
+            .arg("--http-addr")
+            .arg(&http_addr)
+            .arg("--log")
+            .arg("warn")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| {
+                HarnessError::Transport(format!("cannot spawn {}: {error}", binary.display()))
+            })?;
+        let mut daemon = Self {
+            child,
+            socket,
+            http_base: format!("http://{http_addr}"),
+            terminated: false,
+        };
+        daemon.wait_until_ready().await?;
+        Ok(daemon)
+    }
+
+    async fn wait_until_ready(&mut self) -> Result<(), HarnessError> {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            if UnixStream::connect(&self.socket).await.is_ok() {
+                return Ok(());
+            }
+            if let Some(status) = self
+                .child
+                .try_wait()
+                .map_err(|error| HarnessError::Transport(error.to_string()))?
+            {
+                return Err(HarnessError::Transport(format!(
+                    "knectd exited before serving the socket: {status}"
+                )));
+            }
+            if Instant::now() >= deadline {
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+                self.terminated = true;
+                return Err(HarnessError::Timeout(format!(
+                    "fixture daemon socket {}",
+                    self.socket.display()
+                )));
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    }
+
+    /// Returns the daemon socket path.
+    #[must_use]
+    pub fn socket(&self) -> &Path {
+        &self.socket
+    }
+
+    /// Returns the HTTP base URL.
+    #[must_use]
+    pub fn http_base(&self) -> &str {
+        &self.http_base
+    }
+
+    /// Sends `SIGTERM` and waits for the daemon to remove its socket.
+    pub async fn shutdown(mut self) -> Result<(), HarnessError> {
+        terminate(&mut self.child)?;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while self.socket.exists() {
+            if Instant::now() >= deadline {
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+                self.terminated = true;
+                return Err(HarnessError::Timeout(format!(
+                    "socket removal at {}",
+                    self.socket.display()
+                )));
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        let wait_deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match self
+                .child
+                .try_wait()
+                .map_err(|error| HarnessError::Transport(error.to_string()))?
+            {
+                Some(_) => break,
+                None if Instant::now() >= wait_deadline => {
+                    let _ = self.child.kill();
+                    let _ = self.child.wait();
+                    break;
+                }
+                None => tokio::time::sleep(Duration::from_millis(25)).await,
+            }
+        }
+        self.terminated = true;
+        Ok(())
+    }
+}
+
+impl Drop for FixtureDaemon {
+    fn drop(&mut self) {
+        if !self.terminated {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+        if self.socket.exists() {
+            let _ = std::fs::remove_file(&self.socket);
+        }
+    }
+}
+
+fn terminate(child: &mut Child) -> Result<(), HarnessError> {
+    #[cfg(unix)]
+    {
+        let status = Command::new("kill")
+            .arg("-TERM")
+            .arg(child.id().to_string())
+            .status()
+            .map_err(|error| HarnessError::Transport(format!("cannot signal knectd: {error}")))?;
+        if !status.success() {
+            return Err(HarnessError::Transport(format!(
+                "kill -TERM {} exited with {status}",
+                child.id()
+            )));
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        child
+            .kill()
+            .map_err(|error| HarnessError::Transport(format!("cannot kill knectd: {error}")))
+    }
+}
+
+async fn knectd_binary() -> Result<PathBuf, HarnessError> {
+    if let Ok(path) = std::env::var("KNECTD_BIN") {
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return Ok(path);
+        }
+        return Err(HarnessError::InvalidEndpoint(format!(
+            "KNECTD_BIN={} is not a file",
+            path.display()
+        )));
+    }
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace.join("target"));
+    let binary = target_dir.join("debug").join(binary_name());
+    if binary.is_file() && binary_is_fresh(&binary, &workspace) {
+        return Ok(binary);
+    }
+
+    let status = tokio::process::Command::new("cargo")
+        .arg("build")
+        .arg("-p")
+        .arg("knectd")
+        .arg("--locked")
+        .current_dir(&workspace)
+        .status()
+        .await
+        .map_err(|error| HarnessError::Transport(format!("cannot run cargo build: {error}")))?;
+    if !status.success() {
+        return Err(HarnessError::Transport(format!(
+            "cargo build -p knectd failed with {status}"
+        )));
+    }
+    if binary.is_file() {
+        return Ok(binary);
+    }
+    if let Some(path) = sibling_binary() {
+        return Ok(path);
+    }
+    Err(HarnessError::Transport(format!(
+        "built knectd binary missing at {}",
+        binary.display()
+    )))
+}
+
+fn binary_is_fresh(binary: &Path, workspace: &Path) -> bool {
+    let Ok(binary_time) = binary.metadata().and_then(|metadata| metadata.modified()) else {
+        return false;
+    };
+    let mut newest = binary_time;
+    for directory in ["crates/knectd/src", "crates/knect-core/src"] {
+        if let Some(modified) = newest_source_mtime(&workspace.join(directory)) {
+            newest = newest.max(modified);
+        }
+    }
+    binary_time >= newest
+}
+
+fn newest_source_mtime(directory: &Path) -> Option<std::time::SystemTime> {
+    let mut newest = None;
+    let entries = std::fs::read_dir(directory).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(modified) = newest_source_mtime(&path) {
+                newest = Some(newest.map_or(modified, |current: std::time::SystemTime| {
+                    current.max(modified)
+                }));
+            }
+        } else if path.extension().is_some_and(|extension| extension == "rs")
+            && let Ok(modified) = path.metadata().and_then(|metadata| metadata.modified())
+        {
+            newest = Some(newest.map_or(modified, |current: std::time::SystemTime| {
+                current.max(modified)
+            }));
+        }
+    }
+    newest
+}
+
+fn sibling_binary() -> Option<PathBuf> {
+    let current = std::env::current_exe().ok()?;
+    let directory = current.parent()?;
+    [
+        directory.join(binary_name()),
+        directory.parent()?.join(binary_name()),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_file())
+}
+
+const fn binary_name() -> &'static str {
+    if cfg!(windows) {
+        "knectd.exe"
+    } else {
+        "knectd"
+    }
 }
 
 /// Returns a unique temporary socket path for a scenario.

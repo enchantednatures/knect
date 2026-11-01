@@ -87,7 +87,7 @@ mod tests {
     use std::path::Path;
 
     #[tokio::test]
-    async fn all_registered_scenarios_pass_in_the_skeleton() {
+    async fn all_registered_scenarios_pass() {
         let harness =
             Harness::new(None, Some(Path::new("/tmp/knect-e2e-unused.sock"))).expect("harness");
         run_all(&harness).await.expect("skeleton scenarios pass");

@@ -59,19 +59,27 @@ impl EventHub {
         self.sender.clone()
     }
 
+    /// Reserves the next monotonic sequence number.
+    #[must_use]
+    pub fn next_sequence(&self) -> u64 {
+        self.sequence
+            .fetch_add(1, Ordering::Relaxed)
+            .saturating_add(1)
+    }
+
     /// Assigns a sequence number and builds an event without broadcasting it.
     #[must_use]
     pub fn next_event(&self, kind: SseEventKind) -> SseEvent {
-        let seq = self
-            .sequence
-            .fetch_add(1, Ordering::Relaxed)
-            .saturating_add(1);
-        SseEvent::new(seq, Utc::now(), kind)
+        SseEvent::new(self.next_sequence(), Utc::now(), kind)
     }
 
-    /// Publishes an event to the ring and broadcast channel.
-    pub fn publish(&self, kind: SseEventKind) -> SseEvent {
-        let event = self.next_event(kind);
+    /// Publishes an event with an already-reserved sequence number.
+    ///
+    /// This exists so payloads that embed a sequence number (for example
+    /// `GraphPatch`) can be built before the envelope and still agree with the
+    /// SSE `id` exactly.
+    pub fn publish_with_seq(&self, seq: u64, kind: SseEventKind) -> SseEvent {
+        let event = SseEvent::new(seq, Utc::now(), kind);
         {
             let mut ring = self.lock_ring();
             if ring.len() == self.capacity {
@@ -81,6 +89,12 @@ impl EventHub {
         }
         let _ = self.sender.send(event.clone());
         event
+    }
+
+    /// Publishes an event to the ring and broadcast channel.
+    pub fn publish(&self, kind: SseEventKind) -> SseEvent {
+        let seq = self.next_sequence();
+        self.publish_with_seq(seq, kind)
     }
 
     /// Returns the replay decision for a client's `Last-Event-ID`.
