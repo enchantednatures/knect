@@ -1,0 +1,849 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (vX.Y.Z or vX.Y.Z-rc.N). Required when dry_run is false.'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Build, render manifests, and upload workflow artifacts without pushing, signing, or releasing.'
+        required: true
+        default: true
+        type: boolean
+      publish_homebrew:
+        description: 'Update the Homebrew tap for a stable release.'
+        required: true
+        default: true
+        type: boolean
+      publish_krew:
+        description: 'Open a krew-index pull request for a stable release.'
+        required: true
+        default: true
+        type: boolean
+      publish_helm:
+        description: 'Package and push the Helm chart to GHCR.'
+        required: true
+        default: true
+        type: boolean
+      homebrew_tap:
+        description: 'Tap repository (OWNER/homebrew-tap). Defaults to the repository owner.'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: '1'
+  RUST_TOOLCHAIN: '1.98.1'
+  CHART_DIR: charts/knectd
+  ZIG_VERSION: '0.15.2'
+  ZIG_SHA256: '02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239'
+
+jobs:
+  meta:
+    name: Resolve release metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      dry_run: ${{ steps.meta.outputs.dry_run }}
+      publish: ${{ steps.meta.outputs.publish }}
+      publish_homebrew: ${{ steps.meta.outputs.publish_homebrew }}
+      publish_krew: ${{ steps.meta.outputs.publish_krew }}
+      publish_helm: ${{ steps.meta.outputs.publish_helm }}
+      image: ${{ steps.meta.outputs.image }}
+      homebrew_tap: ${{ steps.meta.outputs.homebrew_tap }}
+      docker_available: ${{ steps.meta.outputs.docker_available }}
+      helm_available: ${{ steps.meta.outputs.helm_available }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve tag, modes, and build inputs
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_PUBLISH_HOMEBREW: ${{ inputs.publish_homebrew }}
+          INPUT_PUBLISH_KREW: ${{ inputs.publish_krew }}
+          INPUT_PUBLISH_HELM: ${{ inputs.publish_helm }}
+          INPUT_HOMEBREW_TAP: ${{ inputs.homebrew_tap }}
+        run: |
+          set -euo pipefail
+
+          if [ "${EVENT_NAME}" = "push" ]; then
+            tag="${REF_NAME}"
+            dry_run=false
+            publish_homebrew=true
+            publish_krew=true
+            publish_helm=true
+          else
+            tag="${INPUT_TAG:-}"
+            dry_run="${INPUT_DRY_RUN:-true}"
+            publish_homebrew="${INPUT_PUBLISH_HOMEBREW:-true}"
+            publish_krew="${INPUT_PUBLISH_KREW:-true}"
+            publish_helm="${INPUT_PUBLISH_HELM:-true}"
+          fi
+
+          if [ -z "${tag}" ]; then
+            if [ "${dry_run}" = "true" ]; then
+              tag="v0.0.0-dryrun"
+            else
+              echo "::error::workflow_dispatch requires the tag input when dry_run is false"
+              exit 1
+            fi
+          fi
+
+          if ! [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "::error::tag '${tag}' is not a supported release tag (expected vX.Y.Z or vX.Y.Z-pre)"
+            exit 1
+          fi
+
+          version="${tag#v}"
+          prerelease=false
+          if [[ "${tag}" == *-* ]]; then
+            prerelease=true
+          fi
+
+          publish=false
+          if [ "${dry_run}" != "true" ]; then
+            publish=true
+          fi
+
+          owner="${GITHUB_REPOSITORY%%/*}"
+          # charts/knectd/values.yaml defaults to ghcr.io/OWNER/knectd.
+          image="ghcr.io/${owner}/knectd"
+          image="${image,,}"
+          homebrew_tap="${INPUT_HOMEBREW_TAP:-${owner}/homebrew-tap}"
+          homebrew_tap="${homebrew_tap#https://github.com/}"
+          homebrew_tap="${homebrew_tap%.git}"
+
+          docker_available=false
+          if [ -f Dockerfile ]; then
+            docker_available=true
+          fi
+          helm_available=false
+          if [ -f "${CHART_DIR}/Chart.yaml" ]; then
+            helm_available=true
+          fi
+
+          if [ "${publish}" = "true" ]; then
+            if [ "${docker_available}" != "true" ]; then
+              echo "::error::Dockerfile is required for a published release (the image must be signed and attested)"
+              exit 1
+            fi
+            if [ "${publish_helm}" = "true" ] && [ "${helm_available}" != "true" ]; then
+              echo "::error::${CHART_DIR}/Chart.yaml is required when publish_helm is true"
+              exit 1
+            fi
+          else
+            if [ "${docker_available}" != "true" ]; then
+              echo "::warning::Dockerfile is absent; image build/signing is skipped in this dry run"
+            fi
+            if [ "${publish_helm}" = "true" ] && [ "${helm_available}" != "true" ]; then
+              echo "::warning::${CHART_DIR}/Chart.yaml is absent; Helm packaging is skipped in this dry run"
+            fi
+          fi
+
+          {
+            echo "tag=${tag}"
+            echo "version=${version}"
+            echo "prerelease=${prerelease}"
+            echo "dry_run=${dry_run}"
+            echo "publish=${publish}"
+            echo "publish_homebrew=${publish_homebrew}"
+            echo "publish_krew=${publish_krew}"
+            echo "publish_helm=${publish_helm}"
+            echo "image=${image}"
+            echo "homebrew_tap=${homebrew_tap}"
+            echo "docker_available=${docker_available}"
+            echo "helm_available=${helm_available}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Check required secrets
+        if: steps.meta.outputs.publish == 'true'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          PUBLISH_HOMEBREW: ${{ steps.meta.outputs.publish_homebrew }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if [ "${PUBLISH_HOMEBREW}" = "true" ] && [ "${PRERELEASE}" = "false" ]; then
+            if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
+              echo "::error::HOMEBREW_TAP_TOKEN is required to update the Homebrew tap for a stable release"
+              exit 1
+            fi
+          fi
+
+  verify:
+    name: Verify workspace
+    needs: meta
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt,clippy
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Run tests
+        run: cargo test --workspace --locked
+
+  binaries:
+    name: Build ${{ matrix.os }} ${{ matrix.arch }}
+    needs:
+      - meta
+      - verify
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            builder: zigbuild
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04
+            target: aarch64-unknown-linux-musl
+            builder: zigbuild
+          - os: darwin
+            arch: amd64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            builder: cargo
+          - os: darwin
+            arch: arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            builder: cargo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Install cargo-zigbuild
+        if: matrix.builder == 'zigbuild'
+        uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2
+        with:
+          tool: cargo-zigbuild@0.24.0
+
+      - name: Install Zig
+        if: matrix.builder == 'zigbuild'
+        run: |
+          set -euo pipefail
+          archive="zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
+          curl --retry 3 --retry-delay 2 -fsSLo "/tmp/${archive}" "https://ziglang.org/download/${ZIG_VERSION}/${archive}"
+          echo "${ZIG_SHA256}  /tmp/${archive}" | sha256sum -c -
+          mkdir -p /tmp/zig
+          tar -xJf "/tmp/${archive}" -C /tmp/zig --strip-components=1
+          echo "/tmp/zig" >> "${GITHUB_PATH}"
+
+      - name: Build release binaries
+        env:
+          TARGET: ${{ matrix.target }}
+          BUILDER: ${{ matrix.builder }}
+        run: |
+          set -euo pipefail
+          if [ "${BUILDER}" = "zigbuild" ]; then
+            cargo zigbuild --locked --release --target "${TARGET}" -p knect-tui -p knectd
+          else
+            cargo build --locked --release --target "${TARGET}" -p knect-tui -p knectd
+          fi
+          test -x "target/${TARGET}/release/knect"
+          test -x "target/${TARGET}/release/knectd"
+
+      - name: Package release archive
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          OS_NAME: ${{ matrix.os }}
+          ARCH: ${{ matrix.arch }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          stage="dist/stage"
+          mkdir -p "${stage}" dist/upload
+          install -m 0755 "target/${TARGET}/release/knect" "${stage}/knect"
+          install -m 0755 "target/${TARGET}/release/knectd" "${stage}/knectd"
+          cp LICENSE README.md "${stage}/"
+          archive="knect_${TAG}_${OS_NAME}_${ARCH}.tar.gz"
+          tar -C "${stage}" -czf "dist/upload/${archive}" knect knectd LICENSE README.md
+          tar -tzf "dist/upload/${archive}"
+
+      - name: Upload archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: binary-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/upload/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  sboms:
+    name: Generate SBOMs
+    needs:
+      - meta
+      - binaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Download archives
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: dist/binaries
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.55.0
+
+      - name: Generate SPDX and CycloneDX SBOMs
+        run: |
+          set -euo pipefail
+          mkdir -p dist/sboms
+          shopt -s nullglob
+          archives=(dist/binaries/*.tar.gz)
+          if [ "${#archives[@]}" -ne 4 ]; then
+            echo "::error::expected 4 release archives, found ${#archives[@]}"
+            exit 1
+          fi
+          for archive in "${archives[@]}"; do
+            name="$(basename "${archive}" .tar.gz)"
+            stage="dist/unpacked/${name}"
+            mkdir -p "${stage}"
+            tar -xzf "${archive}" -C "${stage}"
+            syft scan "dir:${stage}" \
+              -o "spdx-json=dist/sboms/${name}.spdx.json" \
+              -o "cyclonedx-json=dist/sboms/${name}.cyclonedx.json"
+          done
+          for sbom in dist/sboms/*.json; do
+            python3 -m json.tool "${sbom}" > /dev/null
+          done
+          ls -l dist/sboms
+
+      - name: Upload SBOMs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sboms
+          path: dist/sboms/*.json
+          if-no-files-found: error
+          retention-days: 14
+
+  docker:
+    name: Build and sign image
+    needs:
+      - meta
+      - verify
+    if: needs.meta.outputs.docker_available == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        if: needs.meta.outputs.publish == 'true'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: image-meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ needs.meta.outputs.image }}
+          tags: |
+            type=raw,value=${{ needs.meta.outputs.tag }}
+            type=raw,value=${{ needs.meta.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.meta.outputs.prerelease == 'false' }}
+            type=sha,format=long
+          labels: |
+            org.opencontainers.image.title=knect
+            org.opencontainers.image.description=Knative topology daemon and terminal UI
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.vendor=knect
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Build and push multi-arch image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ needs.meta.outputs.publish == 'true' }}
+          tags: ${{ steps.image-meta.outputs.tags }}
+          labels: ${{ steps.image-meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.meta.outputs.version }}
+          provenance: false
+          sbom: false
+
+      - name: Install Cosign
+        if: needs.meta.outputs.publish == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+
+      - name: Sign image by digest
+        if: needs.meta.outputs.publish == 'true'
+        env:
+          IMAGE: ${{ needs.meta.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          test -n "${DIGEST}"
+          # GHCR does not accept Cosign v3's new bundle format/OCI referrers
+          # for image signatures yet, so opt into the legacy bundle path.
+          cosign sign --yes --recursive \
+            --new-bundle-format=false \
+            --use-signing-config=false \
+            "${IMAGE}@${DIGEST}"
+
+      - name: Install Syft
+        if: needs.meta.outputs.publish == 'true'
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.55.0
+
+      - name: Generate image SBOMs
+        if: needs.meta.outputs.publish == 'true'
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          IMAGE: ${{ needs.meta.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          SYFT_REGISTRY_AUTH_AUTHORITY: ghcr.io
+          SYFT_REGISTRY_AUTH_USERNAME: ${{ github.actor }}
+          SYFT_REGISTRY_AUTH_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/image-sboms
+          syft scan "registry:${IMAGE}@${DIGEST}" \
+            --platform linux/amd64 \
+            -o "spdx-json=dist/image-sboms/knect_${TAG}_image.spdx.json" \
+            -o "cyclonedx-json=dist/image-sboms/knect_${TAG}_image.cyclonedx.json"
+          python3 -m json.tool "dist/image-sboms/knect_${TAG}_image.spdx.json" > /dev/null
+          python3 -m json.tool "dist/image-sboms/knect_${TAG}_image.cyclonedx.json" > /dev/null
+
+      - name: Attest image provenance
+        if: needs.meta.outputs.publish == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ needs.meta.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-version: ${{ needs.meta.outputs.version }}
+          push-to-registry: true
+          create-storage-record: true
+
+      - name: Attest image SBOM
+        if: needs.meta.outputs.publish == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ needs.meta.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-version: ${{ needs.meta.outputs.version }}
+          sbom-path: dist/image-sboms/knect_${{ needs.meta.outputs.tag }}_image.spdx.json
+          push-to-registry: true
+          create-storage-record: true
+
+      - name: Attest image CycloneDX SBOM
+        if: needs.meta.outputs.publish == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ needs.meta.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-version: ${{ needs.meta.outputs.version }}
+          sbom-path: dist/image-sboms/knect_${{ needs.meta.outputs.tag }}_image.cyclonedx.json
+          push-to-registry: true
+          create-storage-record: true
+
+      - name: Verify image signature and attestations
+        if: needs.meta.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ needs.meta.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign verify \
+            --new-bundle-format=false \
+            --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@.*$" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${IMAGE}@${DIGEST}" > /dev/null
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" > /dev/null
+
+      - name: Upload image SBOMs
+        if: needs.meta.outputs.publish == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-sboms
+          path: dist/image-sboms/*.json
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Sign, attest, and publish
+    needs:
+      - meta
+      - verify
+      - binaries
+      - sboms
+      - docker
+    if: |
+      !cancelled()
+      && needs.meta.result == 'success'
+      && needs.verify.result == 'success'
+      && needs.binaries.result == 'success'
+      && needs.sboms.result == 'success'
+      && (needs.docker.result == 'success' || (needs.meta.outputs.publish == 'false' && needs.docker.result == 'skipped'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Helm
+        if: needs.meta.outputs.helm_available == 'true' && needs.meta.outputs.publish_helm == 'true'
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v4.3.0
+
+      - name: Download binary archives
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: dist/release
+
+      - name: Download binary SBOMs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sboms
+          path: dist/release
+
+      - name: Download image SBOMs
+        if: needs.docker.result == 'success' && needs.meta.outputs.publish == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-sboms
+          path: dist/release
+
+      - name: Package Helm chart
+        if: needs.meta.outputs.helm_available == 'true' && needs.meta.outputs.publish_helm == 'true'
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          IMAGE: ${{ needs.meta.outputs.image }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release
+          helm lint "${CHART_DIR}"
+          helm package "${CHART_DIR}" \
+            --version "${VERSION}" \
+            --app-version "${VERSION}" \
+            --destination dist/release
+          chart_pkg="$(find dist/release -maxdepth 1 -name '*.tgz' -print -quit)"
+          test -n "${chart_pkg}"
+          helm template knectd "${chart_pkg}" --namespace knect-system > /tmp/knectd-rendered.yaml
+          test -s /tmp/knectd-rendered.yaml
+          if ! grep -Fq "image: ${IMAGE}:${VERSION}" /tmp/knectd-rendered.yaml; then
+            echo "::error::packaged chart does not default to ${IMAGE}:${VERSION}; update charts/knectd/values.yaml"
+            exit 1
+          fi
+
+      - name: Push Helm chart to GHCR
+        if: needs.meta.outputs.publish == 'true' && needs.meta.outputs.helm_available == 'true' && needs.meta.outputs.publish_helm == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%%/*}"
+          owner="${owner,,}"
+          chart_pkg="$(find dist/release -maxdepth 1 -name '*.tgz' -print -quit)"
+          test -n "${chart_pkg}"
+          helm registry login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin <<< "${GITHUB_TOKEN}"
+          helm push "${chart_pkg}" "oci://ghcr.io/${owner}/charts"
+
+      - name: Generate checksums
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cd dist/release
+          for platform in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64; do
+            test -f "knect_${TAG}_${platform}.tar.gz" || {
+              echo "::error::missing archive knect_${TAG}_${platform}.tar.gz"
+              exit 1
+            }
+          done
+          mapfile -t files < <(find . -maxdepth 1 -type f \
+            \( -name '*.tar.gz' -o -name '*.spdx.json' -o -name '*.cyclonedx.json' -o -name '*.tgz' \) \
+            -printf '%P\n' | sort)
+          if [ "${#files[@]}" -lt 12 ]; then
+            echo "::error::expected at least 12 release payloads, found ${#files[@]}"
+            exit 1
+          fi
+          sha256sum "${files[@]}" > "knect_${TAG}_checksums.txt"
+          cat "knect_${TAG}_checksums.txt"
+
+      - name: Render Homebrew formula and krew manifest
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/render/homebrew dist/render/krew
+          ./hack/release/render-homebrew.sh \
+            --tag "${TAG}" \
+            --version "${VERSION}" \
+            --repository "${REPOSITORY}" \
+            --checksums "dist/release/knect_${TAG}_checksums.txt" \
+            --output dist/render/homebrew/knect.rb
+          ./hack/release/render-krew.sh \
+            --tag "${TAG}" \
+            --repository "${REPOSITORY}" \
+            --checksums "dist/release/knect_${TAG}_checksums.txt" \
+            --output dist/render/krew/knect.yaml
+          test -s dist/render/homebrew/knect.rb
+          test -s dist/render/krew/knect.yaml
+          if grep -R -n '@@' dist/render; then
+            echo "::error::rendered manifests still contain template placeholders"
+            exit 1
+          fi
+          if command -v ruby >/dev/null 2>&1; then
+            ruby -c dist/render/homebrew/knect.rb
+          fi
+
+      - name: Upload Homebrew formula
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: homebrew-formula
+          path: dist/render/homebrew/knect.rb
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Install Cosign
+        if: needs.meta.outputs.publish == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+
+      - name: Sign release blobs
+        if: needs.meta.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          mapfile -t blobs < <(find dist/release -maxdepth 1 -type f \
+            \( -name '*.tar.gz' -o -name '*.spdx.json' -o -name '*.cyclonedx.json' -o -name '*_checksums.txt' -o -name '*.tgz' \) \
+            -print | sort)
+          if [ "${#blobs[@]}" -eq 0 ]; then
+            echo "::error::no release blobs to sign"
+            exit 1
+          fi
+          for blob in "${blobs[@]}"; do
+            cosign sign-blob --yes --bundle "${blob}.sigstore.json" "${blob}"
+          done
+
+      - name: Attest release subjects
+        if: needs.meta.outputs.publish == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: dist/release/knect_${{ needs.meta.outputs.tag }}_checksums.txt
+          create-storage-record: true
+
+      - name: Attest checksums file
+        if: needs.meta.outputs.publish == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/release/knect_${{ needs.meta.outputs.tag }}_checksums.txt
+          create-storage-record: true
+
+      - name: Verify blob signatures and attestations
+        if: needs.meta.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t blobs < <(find dist/release -maxdepth 1 -type f \
+            \( -name '*.tar.gz' -o -name '*.spdx.json' -o -name '*.cyclonedx.json' -o -name '*_checksums.txt' -o -name '*.tgz' \) \
+            -print | sort)
+          for blob in "${blobs[@]}"; do
+            cosign verify-blob \
+              --bundle "${blob}.sigstore.json" \
+              --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@.*$" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "${blob}" > /dev/null
+            gh attestation verify "${blob}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" > /dev/null
+          done
+
+      - name: Publish GitHub release
+        if: needs.meta.outputs.publish == 'true'
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ needs.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: knect ${{ needs.meta.outputs.tag }}
+          generate_release_notes: true
+          prerelease: ${{ needs.meta.outputs.prerelease == 'true' }}
+          fail_on_unmatched_files: true
+          files: dist/release/*
+
+      - name: Open krew-index pull request
+        if: needs.meta.outputs.publish == 'true' && needs.meta.outputs.prerelease == 'false' && needs.meta.outputs.publish_krew == 'true'
+        uses: rajatjindal/krew-release-bot@c970b8a8f6dbc2f2285a26e3ae160903b87002c3 # v0.0.51
+        with:
+          krew_template_file: dist/render/krew/knect.yaml
+          krew_plugin_release_tag: ${{ needs.meta.outputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KREW_RELEASE_BOT_WEBHOOK_URL: ${{ secrets.KREW_RELEASE_BOT_WEBHOOK_URL }}
+
+      - name: Upload release workflow artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: |
+            dist/release/
+            dist/render/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Summarize dry run
+        if: needs.meta.outputs.publish == 'false'
+        run: |
+          {
+            echo "### Release dry run"
+            echo ""
+            echo "- Tag: \`${TAG}\`"
+            echo "- Prerelease: \`${PRERELEASE}\`"
+            echo "- Checksums, SBOMs, Homebrew formula, and krew manifest are in the \`release-assets\` workflow artifact."
+            echo "- No registry login, signature, attestation, GitHub release, tap commit, or krew-index PR was created."
+          } >> "${GITHUB_STEP_SUMMARY}"
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+
+  homebrew:
+    name: Bump Homebrew tap
+    needs:
+      - meta
+      - release
+    if: needs.meta.outputs.publish == 'true' && needs.meta.outputs.prerelease == 'false' && needs.meta.outputs.publish_homebrew == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.meta.outputs.homebrew_tap }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+          persist-credentials: true
+
+      - name: Download rendered formula
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: homebrew-formula
+          path: manifests
+
+      - name: Commit formula to tap
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          formula="$(find manifests -type f -name knect.rb -print -quit)"
+          test -n "${formula}"
+          test -s "${formula}"
+          mkdir -p tap/Formula
+          cp "${formula}" tap/Formula/knect.rb
+          git -C tap config user.name "github-actions[bot]"
+          git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git -C tap diff --quiet -- Formula/knect.rb; then
+            echo "Homebrew formula is already at ${TAG}; nothing to commit"
+            exit 0
+          fi
+          git -C tap add Formula/knect.rb
+          git -C tap commit -m "knect ${VERSION}"
+          default_branch="$(git -C tap rev-parse --abbrev-ref HEAD)"
+          if [ "${default_branch}" = "HEAD" ]; then
+            default_branch="$(git -C tap symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo main)"
+            default_branch="${default_branch#origin/}"
+          fi
+          git -C tap push origin "HEAD:${default_branch}"
