@@ -19,8 +19,23 @@ workspace = true
 
 [dependencies]
 knect-proto = { path = "../knect-proto" }
+async-stream.workspace = true
+chrono.workspace = true
 clap.workspace = true
 futures.workspace = true
 ratatui.workspace = true
+reqwest = { workspace = true, features = ["stream"] }
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+unicode-width.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+insta.workspace = true
+portable-pty.workspace = true
+serde.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+vt100.workspace = true

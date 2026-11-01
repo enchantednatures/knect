@@ -10,9 +10,14 @@ pub struct GraphArgs {
     /// Emit JSON instead of a terminal view.
     #[arg(long)]
     pub json: bool,
+    /// Resource as `kind/name` or `apiVersion/kind/namespace/name`.
+    pub resource: Option<String>,
+    /// Namespace for the resource.
+    #[arg(short = 'n', long)]
+    pub namespace: Option<String>,
 }
 
-/// Runs the graph subcommand. Task 13 replaces this with the TUI view.
+/// Runs the graph subcommand. Task 15 implements the focused view.
 pub fn run(_args: GraphArgs) -> Result<(), CliError> {
-    Err(CliError::NotImplemented("graph view"))
+    Err(CliError::NotImplemented("focused graph view"))
 }

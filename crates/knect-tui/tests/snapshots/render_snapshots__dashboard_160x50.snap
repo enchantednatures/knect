@@ -1,0 +1,54 @@
+---
+source: crates/knect-tui/tests/render_snapshots.rs
+expression: "draw_text(&state, 160, 50)"
+---
+┌knect dashboard───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│knect  kind-knect-e2e  gen 42  unix:/tmp/knectd.sock  ● connected  1/1 watchers  actions off                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌Resources─────────────────────────────────────┐┌Topology 4 nodes · 3 edges────────────────────────────────────────────────────┐┌Inspector─────────────────────┐
+│▾ default                                     ││┌──────────────────────┐    ┌────────────────┐    ┌──────────────────────┐    ││[Mutations] [Policies]        │
+│ ▾ Services 1                                 │││Trigger orders-to-hel…│─┐─▶│Broker orders   │ ┌─▶│Revision hello-00001 …│    ││[Links] [Metrics]             │
+│  hello ● [0K]                                ││└──────────────────────┘ │  └────────────────┘ │  └──────────────────────┘    ││hello-00001  Revision/default │
+│ ▾ Revisions 1                                ││                         │                     │                              ││Revision hello-00001 ready=1  │
+│  hello-00001 ● [1..N]                        ││                         │  ┌────────────────┐ │                              ││                              │
+│ ▾ Brokers 1                                  ││                         └─▶│KService hello …│─┘                              ││knative-serving-controller  Kn│
+│  orders ●                                    ││                            └────────────────┘                                ││  /spec/containers/0/resources│
+│ ▾ Triggers 1                                 ││                                                                              ││  /spec/timeoutSeconds = 300  │
+│  orders-to-hello ▲ [Degraded]                ││                                                                              ││                              │
+│                                              ││                                                                              ││Manifest (redacted)           │
+│                                              ││                                                                              ││apiVersion: serving.knative.de│
+│                                              ││                                                                              ││kind: Revision                │
+│                                              ││                                                                              ││metadata:                     │
+│                                              ││                                                                              ││  name: hello-00001           │
+│                                              ││                                                                              ││  namespace: default          │
+│                                              ││                                                                              ││spec:                         │
+│                                              ││                                                                              ││  containers:                 │
+│                                              ││                                                                              ││    - name: user-container    │
+│                                              ││                                                                              ││      image: ghcr.io/example/h│
+│                                              ││                                                                              ││      env:                    │
+│                                              ││                                                                              ││        - name: REDIS_URL     │
+│                                              ││                                                                              ││          value: "[REDACTED]" │
+│                                              ││                                                                              ││                              │
+│                                              ││                                                                              ││                              │
+│                                              ││                                                                              ││                              │
+│                                              ││                                                                              ││                              │
+│                                              ││                                                                              ││                              │
+│                                              ││                                                                              ││                              │
+│                                              ││                                                                              ││                              │
+│                                              ││                                                                              ││                              │
+└──────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────┘
+┌Logs (0)──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│no log lines yet — select a Revision or Pod to subscribe                                                                                                      │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ tree  hjkl move · / filter · gd details · Tab pane · 1-4 tabs · ? help · q quit

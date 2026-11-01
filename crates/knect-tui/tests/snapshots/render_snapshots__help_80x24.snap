@@ -1,0 +1,28 @@
+---
+source: crates/knect-tui/tests/render_snapshots.rs
+expression: "draw_text(&state, 80, 24)"
+---
+┌knect dashboard───────────────────────────────────────────────────────────────┐
+│knect  kind-knect-e2e  gen 42  unix:/tmp/knectd.sock  ● connected  1/1 watcher│
+└──────────────────────────────────────────────────────────────────────────────┘
+┌Resources─────────────┐┌Topology (compact) 4 nodes · 3 edges──┐┌Inspector─────┐
+│▾ d┌knect help────────────────────────────────────────────────────────────┐   │
+│ ▾ │j / k       move selection or scroll                                  │   │
+│  h│h / l       pan the graph or switch tabs                              │   │
+│ ▾ │g / G       jump to top or bottom                                     │   │
+│  h│gd          focus the inspector details                               │  R│
+│ ▾ │/           filter the resource tree                                  │llo│
+│  o│Tab         cycle panes (Shift-Tab reverses)                          │   │
+│ ▾ │1..4        inspector tabs: Mutations, Policies, Links, Metrics       │vin│
+│  o│r           refresh topology from the daemon                          │tai│
+│   │?           toggle this help                                          │eou│
+│   │Esc         close overlays and prompts                                │   │
+│   │q           quit                                                      │eda│
+└───│d / t / w   reserved for mutation, traffic, and tap modals (Task 14)  │───┘
+┌Log│                                                                      │───┐
+│no │                                                                      │   │
+│   └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+ tree  hjkl move · / filter · gd details · Tab pane · 1-4 tabs · ? help · q quit

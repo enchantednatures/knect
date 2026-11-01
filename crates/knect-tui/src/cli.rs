@@ -21,13 +21,18 @@ use crate::client::{ClientError, resolve_endpoint};
     about = "Knative topology explorer"
 )]
 pub struct Cli {
-    /// Unix domain socket path.
+    /// Unix domain socket path (default `/tmp/knectd.sock`). Ignored when
+    /// `--daemon-url` is supplied.
     #[arg(long, global = true, env = "KNECT_SOCKET")]
     pub socket: Option<PathBuf>,
-    /// Daemon HTTP URL. Takes precedence over the socket.
+    /// Daemon HTTP base URL, for example `http://127.0.0.1:7420`. Takes
+    /// precedence over `--socket`.
     #[arg(long, global = true, env = "KNECT_DAEMON_URL")]
     pub daemon_url: Option<String>,
-    /// Optional subcommand. No subcommand opens the TUI (Task 13).
+    /// Render the topology with ASCII box characters instead of Unicode.
+    #[arg(long, global = true, env = "KNECT_ASCII")]
+    pub ascii: bool,
+    /// Optional subcommand. No subcommand opens the dashboard.
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -102,7 +107,11 @@ mod tests {
     #[test]
     fn stubs_return_typed_not_implemented() {
         for command in [
-            Command::Graph(graph::GraphArgs { json: false }),
+            Command::Graph(graph::GraphArgs {
+                json: false,
+                resource: None,
+                namespace: None,
+            }),
             Command::Diff(diff::DiffArgs {
                 resource: None,
                 mode: diff::DiffModeCli::ThreeWay,

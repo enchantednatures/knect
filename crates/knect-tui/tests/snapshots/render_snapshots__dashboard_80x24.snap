@@ -1,0 +1,28 @@
+---
+source: crates/knect-tui/tests/render_snapshots.rs
+expression: "draw_text(&state, 80, 24)"
+---
+┌knect dashboard───────────────────────────────────────────────────────────────┐
+│knect  kind-knect-e2e  gen 42  unix:/tmp/knectd.sock  ● connected  1/1 watcher│
+└──────────────────────────────────────────────────────────────────────────────┘
+┌Resources─────────────┐┌Topology (compact) 4 nodes · 3 edges──┐┌Inspector─────┐
+│▾ default             ││#01 ▶ Trigger orders-to-hello degraded││[Mutations]   │
+│ ▾ Services 1         ││#02   ▶ Broker orders healthy         ││[Policies]    │
+│  hello ● [0K]        ││#03   ▶ KService hello healthy [0K]   ││[Links]       │
+│ ▾ Revisions 1        ││#04     ▶ Revision hello-00001 healthy││[Metrics]     │
+│  hello-00001 ● [1..N]││                                      ││hello-00001  R│
+│ ▾ Brokers 1          ││                                      ││Revision hello│
+│  orders ●            ││                                      ││              │
+│ ▾ Triggers 1         ││                                      ││knative-servin│
+│  orders-to-hello ▲ [D││                                      ││  /spec/contai│
+│                      ││                                      ││  /spec/timeou│
+│                      ││                                      ││              │
+│                      ││                                      ││Manifest (reda│
+└──────────────────────┘└──────────────────────────────────────┘└──────────────┘
+┌Logs (0)──────────────────────────────────────────────────────────────────────┐
+│no log lines yet — select a Revision or Pod to subscribe                      │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+ tree  hjkl move · / filter · gd details · Tab pane · 1-4 tabs · ? help · q quit
