@@ -223,6 +223,25 @@ async fn actions_validate_manifest_expands_admission_causes() {
 }
 
 #[tokio::test]
+async fn actions_validate_manifest_surfaces_policy_errors() {
+    let reader = FakeReader::new().with_dry_run_response(Err(CoreError::Policy(
+        "kyverno policy require-labels denied the request".to_owned(),
+    )));
+    let result = actions(&reader)
+        .validate_manifest(manifest(
+            "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: settings\n",
+        ))
+        .await
+        .expect("policy error is a validation result");
+
+    assert!(!result.valid);
+    assert_eq!(result.violations.len(), 1);
+    assert_eq!(result.violations[0].kind, PolicyKind::Kyverno);
+    assert_eq!(result.violations[0].result, PolicyResult::Fail);
+    assert!(result.violations[0].message.contains("require-labels"));
+}
+
+#[tokio::test]
 async fn actions_validate_manifest_propagates_transport_failures() {
     let reader = FakeReader::new()
         .with_dry_run_response(Err(CoreError::Internal("connection reset".to_owned())));

@@ -223,7 +223,7 @@ async fn actions_traffic_split_propagates_missing_revision_errors() {
 }
 
 #[tokio::test]
-async fn actions_traffic_split_checks_ownership_without_a_staged_service() {
+async fn actions_traffic_split_only_requires_owned_revisions() {
     let reader = FakeReader::new()
         .with_object(revision("hello-00001"))
         .with_patch_response(Ok(service()));

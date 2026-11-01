@@ -223,6 +223,27 @@ async fn tap_rpc_lifecycle_delivers_a_scripted_cloud_event() {
         .map(|call| call.name)
         .collect();
     assert!(deleted.contains(&handle.id));
+
+    let authority = handle
+        .callback_url
+        .strip_prefix("http://")
+        .and_then(|rest| rest.split_once('/'))
+        .map(|(authority, _)| authority.to_owned())
+        .expect("callback authority");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        match TcpStream::connect(&authority).await {
+            Err(_) => break,
+            Ok(stream) => {
+                drop(stream);
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "callback listener must stop after the last tap"
+                );
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        }
+    }
 }
 
 #[tokio::test]

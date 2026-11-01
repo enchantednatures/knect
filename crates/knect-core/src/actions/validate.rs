@@ -26,6 +26,7 @@ pub(super) async fn validate_manifest(
     match reader.dry_run_create(object).await {
         Ok(result) => accepted(result, &resource),
         Err(CoreError::Kube(kube::Error::Api(status))) => Ok(rejected(&status, &resource)),
+        Err(CoreError::Policy(message)) => Ok(rejected_policy(&message, &resource)),
         Err(error) => Err(error),
     }
 }
@@ -130,6 +131,23 @@ fn rejected(status: &Status, resource: &ResourceId) -> ValidationResult {
         valid: false,
         mutated_manifest: None,
         violations: admission_violations(status, resource),
+        warnings: Vec::new(),
+    }
+}
+
+fn rejected_policy(message: &str, resource: &ResourceId) -> ValidationResult {
+    ValidationResult {
+        valid: false,
+        mutated_manifest: None,
+        violations: vec![policy_record(
+            "policy".to_owned(),
+            "policy",
+            message.to_owned(),
+            Severity::High,
+            policy_kind(message),
+            resource,
+            BTreeMap::new(),
+        )],
         warnings: Vec::new(),
     }
 }

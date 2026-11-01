@@ -5,20 +5,17 @@ use std::collections::BTreeMap;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use chrono::{DateTime, Utc};
-use knect_proto::redaction::REDACTED;
 use knect_proto::tap::{TapEvent, TapFilter};
 use serde_json::Value;
 use uuid::Uuid;
 
+use super::redact::redact_headers;
 use crate::error::CoreError;
 
 /// Maximum accepted callback body size.
 pub(crate) const MAX_BODY_BYTES: usize = 1_048_576;
 /// Maximum accepted callback header count.
 pub(crate) const MAX_HEADERS: usize = 64;
-/// Maximum retained length of one callback header value.
-pub(crate) const MAX_HEADER_VALUE: usize = 8_192;
-
 /// One callback delivery handed to a tap manager.
 pub struct TapCallbackRequest {
     /// HTTP headers with lower-case names.
@@ -80,23 +77,6 @@ pub(crate) fn parse_cloud_event(
         payload: parsed.payload,
         received_at: request.received_at,
     }))
-}
-
-/// Redacts credential-bearing headers while preserving diagnostic headers.
-#[must_use]
-pub fn redact_headers(headers: &BTreeMap<String, String>) -> BTreeMap<String, String> {
-    headers
-        .iter()
-        .map(|(name, value)| {
-            let name = name.to_ascii_lowercase();
-            let value = if sensitive_header(&name) {
-                REDACTED.to_owned()
-            } else {
-                value.chars().take(MAX_HEADER_VALUE).collect()
-            };
-            (name, value)
-        })
-        .collect()
 }
 
 struct ParsedEvent {
@@ -275,24 +255,6 @@ fn matches_filter(filter: Option<&TapFilter>, attributes: &BTreeMap<String, Stri
             .get(&key.to_ascii_lowercase())
             .is_some_and(|actual| actual == expected)
     })
-}
-
-fn sensitive_header(name: &str) -> bool {
-    matches!(
-        name,
-        "authorization"
-            | "proxy-authorization"
-            | "cookie"
-            | "set-cookie"
-            | "x-api-key"
-            | "x-auth-token"
-            | "x-knect-tap-token"
-            | "x-csrf-token"
-    ) || name.contains("token")
-        || name.contains("secret")
-        || name.contains("password")
-        || name.contains("api-key")
-        || name.contains("apikey")
 }
 
 fn invalid(message: impl Into<String>) -> CoreError {

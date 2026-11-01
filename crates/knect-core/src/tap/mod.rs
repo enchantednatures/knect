@@ -7,7 +7,14 @@
 //! logic so it is testable without a cluster.
 
 mod callback;
+mod config;
+mod delivery;
+mod entry;
+mod gc;
 mod manager;
+mod reap;
+mod redact;
+mod target;
 mod token;
 mod trigger;
 
@@ -19,8 +26,10 @@ use knect_proto::tap::TapHandle;
 
 use crate::error::CoreError;
 
-pub use callback::{TapCallbackRequest, TapDelivery, redact_headers};
-pub use manager::{TapManagerConfig, TriggerTapManager};
+pub use callback::{TapCallbackRequest, TapDelivery};
+pub use config::TapManagerConfig;
+pub use manager::TriggerTapManager;
+pub use redact::redact_headers;
 
 /// Manages ephemeral CloudEvent taps.
 pub trait TapManager: Send + Sync {

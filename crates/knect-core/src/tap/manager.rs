@@ -3,128 +3,45 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use futures::future::BoxFuture;
 use knect_proto::rpc::{TapStartParams, TapStopResult};
-use knect_proto::tap::{TapEvent, TapFilter, TapHandle, TapState};
+use knect_proto::tap::{TapHandle, TapState};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::TapManager;
 use super::callback::{TapCallbackRequest, TapDelivery, parse_cloud_event};
+use super::config::TapManagerConfig;
+use super::entry::{RetiredTap, TapEntry, lock};
+use super::gc::gc_orphans;
 use super::token::{generate_token, tokens_match};
 use super::trigger::{self, CallbackRef, TriggerCoordinates, TriggerRequest};
-use crate::config::TapConfig;
 use crate::error::CoreError;
 use crate::kube::ClusterReader;
 
 /// How long expired tap handles remain visible through `tap.list`.
-const RETIRED_RETENTION_SECS: i64 = 60;
+pub(super) const RETIRED_RETENTION_SECS: i64 = 60;
 
-/// Settings for [`TriggerTapManager`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TapManagerConfig {
-    /// Whether starting taps is allowed.
-    pub enabled: bool,
-    /// Callback listener bind address.
-    pub callback_bind: String,
-    /// Host advertised to Knative. Empty auto-detects the bind address.
-    pub callback_host: String,
-    /// Maximum concurrent taps.
-    pub max_taps: u32,
-    /// Maximum retained events per tap.
-    pub max_events: u32,
-    /// Default tap time-to-live in seconds.
-    pub ttl_secs: u64,
-}
-
-impl Default for TapManagerConfig {
-    fn default() -> Self {
-        let config = TapConfig::default();
-        Self::from(&config)
-    }
-}
-
-impl From<&TapConfig> for TapManagerConfig {
-    fn from(config: &TapConfig) -> Self {
-        Self {
-            enabled: config.enabled,
-            callback_bind: config.callback_bind.clone(),
-            callback_host: config.callback_host.clone(),
-            max_taps: config.max_taps,
-            max_events: config.max_events,
-            ttl_secs: config.ttl_secs,
-        }
-    }
-}
-
-impl From<TapConfig> for TapManagerConfig {
-    fn from(config: TapConfig) -> Self {
-        Self::from(&config)
-    }
-}
-
-struct TapEntry {
-    id: String,
-    token: String,
-    coordinates: TriggerCoordinates,
-    handle: Mutex<TapHandle>,
-    filter: Option<TapFilter>,
-    ring: Mutex<VecDeque<TapEvent>>,
-    max_events: usize,
-    expires: DateTime<Utc>,
-}
-
-impl TapEntry {
-    fn handle(&self) -> TapHandle {
-        lock(&self.handle).clone()
-    }
-
-    fn set_state(&self, state: TapState) {
-        lock(&self.handle).state = state;
-    }
-
-    fn is_active(&self) -> bool {
-        lock(&self.handle).state == TapState::Active
-    }
-
-    fn events(&self) -> Vec<TapEvent> {
-        lock(&self.ring).iter().cloned().collect()
-    }
-
-    fn push(&self, event: TapEvent) {
-        let mut ring = lock(&self.ring);
-        if ring.len() == self.max_events {
-            ring.pop_front();
-        }
-        ring.push_back(event);
-    }
-}
-
-struct RetiredTap {
-    entry: Arc<TapEntry>,
-    retired_at: DateTime<Utc>,
-}
-
-struct Inner {
-    taps: Mutex<BTreeMap<String, Arc<TapEntry>>>,
-    retired: Mutex<VecDeque<RetiredTap>>,
-    callback_addr: Mutex<Option<SocketAddr>>,
-    reaper_cancel: CancellationToken,
-    gc_done: AtomicBool,
-    reaper_started: AtomicBool,
+pub(super) struct Inner {
+    pub(super) taps: Mutex<BTreeMap<String, Arc<TapEntry>>>,
+    pub(super) retired: Mutex<VecDeque<RetiredTap>>,
+    pub(super) callback_addr: Mutex<Option<SocketAddr>>,
+    pub(super) reaper_cancel: CancellationToken,
+    pub(super) gc_done: AtomicBool,
+    pub(super) reaper_started: AtomicBool,
 }
 
 /// Tap manager backed by ephemeral Knative Triggers.
 #[derive(Clone)]
 pub struct TriggerTapManager {
-    reader: Arc<dyn ClusterReader>,
-    config: TapManagerConfig,
-    inner: Arc<Inner>,
-    lifecycle: Arc<tokio::sync::Mutex<()>>,
+    pub(super) reader: Arc<dyn ClusterReader>,
+    pub(super) config: TapManagerConfig,
+    pub(super) inner: Arc<Inner>,
+    pub(super) lifecycle: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl TriggerTapManager {
@@ -146,29 +63,11 @@ impl TriggerTapManager {
         }
     }
 
-    /// Returns the events retained for a tap, active or recently retired.
-    #[must_use]
-    pub fn events(&self, tap_id: &str) -> Vec<TapEvent> {
-        if let Some(entry) = lock(&self.inner.taps).get(tap_id).cloned() {
-            return entry.events();
-        }
-        lock(&self.inner.retired)
-            .iter()
-            .find(|retired| retired.entry.id == tap_id)
-            .map_or_else(Vec::new, |retired| retired.entry.events())
-    }
-
-    /// Reaps taps whose expiry is at or before `now`.
-    pub async fn reap_at(&self, now: DateTime<Utc>) -> Result<Vec<String>, CoreError> {
-        let _guard = self.lifecycle.lock().await;
-        self.reap_locked(now).await
-    }
-
     /// Deletes daemon-managed Triggers and Secrets left by an earlier daemon.
     pub async fn gc_startup(&self) -> Result<Vec<String>, CoreError> {
         let _guard = self.lifecycle.lock().await;
         let active = self.active_ids();
-        trigger::gc_orphans(&self.reader, &active).await
+        gc_orphans(&self.reader, &active).await
     }
 
     fn active_ids(&self) -> BTreeSet<String> {
@@ -271,53 +170,11 @@ impl TriggerTapManager {
         *lock(&self.inner.callback_addr)
     }
 
-    async fn reap_locked(&self, now: DateTime<Utc>) -> Result<Vec<String>, CoreError> {
-        let expired: Vec<Arc<TapEntry>> = {
-            let mut taps = lock(&self.inner.taps);
-            let ids: Vec<String> = taps
-                .iter()
-                .filter(|(_, entry)| entry.expires <= now)
-                .map(|(id, _)| id.clone())
-                .collect();
-            ids.into_iter().filter_map(|id| taps.remove(&id)).collect()
-        };
-        let ids: Vec<String> = expired.iter().map(|entry| entry.id.clone()).collect();
-        for entry in &expired {
-            entry.set_state(TapState::Expired);
-            if let Err(error) =
-                trigger::delete_trigger_resources(&self.reader, &entry.coordinates).await
-            {
-                tracing::warn!(
-                    tap_id = %entry.id,
-                    %error,
-                    "expired tap resource cleanup failed; startup GC will retry"
-                );
-            }
-        }
-        if !expired.is_empty() {
-            let mut retired = lock(&self.inner.retired);
-            for entry in expired {
-                retired.push_back(RetiredTap {
-                    entry,
-                    retired_at: now,
-                });
-            }
-            let cutoff = now - chrono::Duration::seconds(RETIRED_RETENTION_SECS);
-            while retired
-                .front()
-                .is_some_and(|retired| retired.retired_at < cutoff)
-            {
-                retired.pop_front();
-            }
-        }
-        Ok(ids)
-    }
-
     async fn ensure_startup_gc(&self) {
         if self.inner.gc_done.load(Ordering::Acquire) {
             return;
         }
-        match trigger::gc_orphans(&self.reader, &self.active_ids()).await {
+        match gc_orphans(&self.reader, &self.active_ids()).await {
             Ok(removed) => {
                 self.inner.gc_done.store(true, Ordering::Release);
                 if !removed.is_empty() {
@@ -398,10 +255,36 @@ impl TapManager for TriggerTapManager {
         })
     }
 
-    fn reap(&self) -> BoxFuture<'_, Result<Vec<String>, CoreError>> {
+    fn set_callback_addr(&self, addr: SocketAddr) {
+        *lock(&self.inner.callback_addr) = Some(addr);
+    }
+
+    fn active_count(&self) -> usize {
+        lock(&self.inner.taps).len()
+    }
+
+    fn shutdown(&self) -> BoxFuture<'_, Result<(), CoreError>> {
         Box::pin(async move {
             let _guard = self.lifecycle.lock().await;
-            self.reap_locked(Utc::now()).await
+            self.inner.reaper_cancel.cancel();
+            let taps: Vec<Arc<TapEntry>> = {
+                let mut taps = lock(&self.inner.taps);
+                std::mem::take(&mut *taps).into_values().collect()
+            };
+            for entry in &taps {
+                entry.set_state(TapState::Stopped);
+                if let Err(error) =
+                    trigger::delete_trigger_resources(&self.reader, &entry.coordinates).await
+                {
+                    tracing::warn!(
+                        tap_id = %entry.id,
+                        %error,
+                        "tap shutdown cleanup failed; startup GC will retry"
+                    );
+                }
+            }
+            lock(&self.inner.retired).clear();
+            Ok(())
         })
     }
 
@@ -437,43 +320,10 @@ impl TapManager for TriggerTapManager {
         })
     }
 
-    fn set_callback_addr(&self, addr: SocketAddr) {
-        *lock(&self.inner.callback_addr) = Some(addr);
-    }
-
-    fn active_count(&self) -> usize {
-        lock(&self.inner.taps).len()
-    }
-
-    fn shutdown(&self) -> BoxFuture<'_, Result<(), CoreError>> {
+    fn reap(&self) -> BoxFuture<'_, Result<Vec<String>, CoreError>> {
         Box::pin(async move {
             let _guard = self.lifecycle.lock().await;
-            self.inner.reaper_cancel.cancel();
-            let taps: Vec<Arc<TapEntry>> = {
-                let mut taps = lock(&self.inner.taps);
-                std::mem::take(&mut *taps).into_values().collect()
-            };
-            for entry in &taps {
-                entry.set_state(TapState::Stopped);
-                if let Err(error) =
-                    trigger::delete_trigger_resources(&self.reader, &entry.coordinates).await
-                {
-                    tracing::warn!(
-                        tap_id = %entry.id,
-                        %error,
-                        "tap shutdown cleanup failed; startup GC will retry"
-                    );
-                }
-            }
-            lock(&self.inner.retired).clear();
-            Ok(())
+            self.reap_locked(Utc::now()).await
         })
-    }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    match mutex.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
     }
 }

@@ -1,6 +1,6 @@
 //! Ephemeral Knative Trigger and Secret provisioning for taps.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 
 use base64::Engine as _;
@@ -8,9 +8,10 @@ use base64::engine::general_purpose::STANDARD;
 use knect_proto::Gvk;
 use knect_proto::tap::{TapFilter, TapTarget, TapTargetKind};
 use kube::api::{ApiResource, DynamicObject};
-use serde_json::{Value, json};
+use serde_json::json;
 
-use super::manager::TapManagerConfig;
+use super::config::TapManagerConfig;
+use super::target::{broker_reference, merge_filters};
 use crate::error::CoreError;
 use crate::kube::ClusterReader;
 
@@ -21,8 +22,8 @@ pub(crate) const TAP_ID_LABEL: &str = "knect.dev/tap-id";
 /// Label value marking daemon-managed objects.
 pub(crate) const MANAGED_BY_VALUE: &str = "knect";
 
-const BROKER_GROUP: &str = "eventing.knative.dev";
-const BROKER_VERSION: &str = "v1";
+pub(super) const BROKER_GROUP: &str = "eventing.knative.dev";
+pub(super) const BROKER_VERSION: &str = "v1";
 
 /// Coordinates of the resources created for one tap.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -256,57 +257,6 @@ async fn delete_secret(
         .await
 }
 
-/// Deletes daemon-managed Trigger/Secret objects whose tap is no longer live.
-pub(crate) async fn gc_orphans(
-    reader: &std::sync::Arc<dyn ClusterReader>,
-    active_ids: &BTreeSet<String>,
-) -> Result<Vec<String>, CoreError> {
-    let triggers = reader.list(&trigger_resource(), None).await?;
-    let secrets = reader.list(&secret_resource(), None).await?;
-    let mut removed = BTreeSet::new();
-
-    for object in &triggers {
-        let Some(id) = managed_tap_id(object) else {
-            continue;
-        };
-        if active_ids.contains(&id) {
-            continue;
-        }
-        let namespace = object.metadata.namespace.clone().unwrap_or_default();
-        let name = object.metadata.name.clone().unwrap_or_default();
-        if namespace.is_empty() || name.is_empty() {
-            continue;
-        }
-        let coordinates = TriggerCoordinates {
-            namespace: namespace.clone(),
-            trigger_name: name,
-            secret_name: secret_name_for(&id),
-        };
-        delete_trigger_resources(reader, &coordinates).await?;
-        removed.insert(id);
-    }
-
-    for object in &secrets {
-        let Some(id) = managed_tap_id(object) else {
-            continue;
-        };
-        if active_ids.contains(&id) || removed.contains(&id) {
-            continue;
-        }
-        let namespace = object.metadata.namespace.clone().unwrap_or_default();
-        let name = object.metadata.name.clone().unwrap_or_default();
-        if namespace.is_empty() || name.is_empty() {
-            continue;
-        }
-        reader
-            .delete(&Gvk::new("", "v1", "Secret"), Some(&namespace), &name)
-            .await?;
-        removed.insert(id);
-    }
-
-    Ok(removed.into_iter().collect())
-}
-
 /// Builds the Secret name paired with a tap ID.
 #[must_use]
 pub(crate) fn secret_name_for(id: &str) -> String {
@@ -318,104 +268,4 @@ fn object_labels(id: &str) -> BTreeMap<String, String> {
         (MANAGED_BY_LABEL.to_owned(), MANAGED_BY_VALUE.to_owned()),
         (TAP_ID_LABEL.to_owned(), id.to_owned()),
     ])
-}
-
-fn managed_tap_id(object: &DynamicObject) -> Option<String> {
-    let labels = object.metadata.labels.as_ref()?;
-    if labels.get(MANAGED_BY_LABEL).map(String::as_str) != Some(MANAGED_BY_VALUE) {
-        return None;
-    }
-    labels.get(TAP_ID_LABEL).cloned().or_else(|| {
-        object
-            .metadata
-            .annotations
-            .as_ref()?
-            .get(TAP_ID_LABEL)
-            .cloned()
-    })
-}
-
-fn broker_reference(
-    kind: TapTargetKind,
-    target: &DynamicObject,
-) -> Result<(Value, BTreeMap<String, String>), CoreError> {
-    match kind {
-        TapTargetKind::Broker => Ok((
-            json!({
-                "apiVersion": format!("{BROKER_GROUP}/{BROKER_VERSION}"),
-                "kind": "Broker",
-                "name": target.metadata.name.clone().unwrap_or_default(),
-            }),
-            BTreeMap::new(),
-        )),
-        TapTargetKind::Trigger => {
-            let spec = target
-                .data
-                .get("spec")
-                .ok_or_else(|| CoreError::Tap("tap target Trigger has no spec".to_owned()))?;
-            let broker = spec
-                .get("brokerRef")
-                .ok_or_else(|| CoreError::Tap("tap target Trigger has no brokerRef".to_owned()))?;
-            let name = broker.get("name").and_then(Value::as_str).ok_or_else(|| {
-                CoreError::Tap("tap target Trigger brokerRef has no name".to_owned())
-            })?;
-            let api_version = broker
-                .get("apiVersion")
-                .and_then(Value::as_str)
-                .unwrap_or(BROKER_GROUP);
-            let kind = broker
-                .get("kind")
-                .and_then(Value::as_str)
-                .unwrap_or("Broker");
-            let broker_ref = json!({
-                "apiVersion": api_version,
-                "kind": kind,
-                "name": name,
-            });
-            Ok((broker_ref, target_filter(spec)?))
-        }
-        TapTargetKind::Unknown => Err(CoreError::Tap(
-            "unsupported tap target kind; expected broker or trigger".to_owned(),
-        )),
-    }
-}
-
-fn target_filter(spec: &Value) -> Result<BTreeMap<String, String>, CoreError> {
-    let Some(attributes) = spec
-        .get("filter")
-        .and_then(|filter| filter.get("attributes"))
-        .and_then(Value::as_object)
-    else {
-        return Ok(BTreeMap::new());
-    };
-    let mut result = BTreeMap::new();
-    for (key, value) in attributes {
-        let Some(text) = value.as_str() else {
-            return Err(CoreError::Tap(format!(
-                "tap target Trigger filter attribute '{key}' is not a string"
-            )));
-        };
-        result.insert(key.clone(), text.to_owned());
-    }
-    Ok(result)
-}
-
-fn merge_filters(
-    mut base: BTreeMap<String, String>,
-    requested: Option<&TapFilter>,
-) -> Result<BTreeMap<String, String>, CoreError> {
-    let Some(requested) = requested else {
-        return Ok(base);
-    };
-    for (key, value) in &requested.attributes {
-        if let Some(existing) = base.get(key)
-            && existing != value
-        {
-            return Err(CoreError::Tap(format!(
-                "tap filter attribute '{key}' conflicts with the target Trigger"
-            )));
-        }
-        base.insert(key.clone(), value.clone());
-    }
-    Ok(base)
 }

@@ -25,8 +25,7 @@ pub(super) async fn set_traffic_split(
     validate(&params)?;
 
     let service_gvk = Gvk::new("serving.knative.dev", "v1", SERVICE_KIND);
-    let service_uid = lookup_service_uid(reader, &params).await?;
-    verify_revision_ownership(reader, &params, service_uid.as_deref()).await?;
+    verify_revision_ownership(reader, &params).await?;
 
     let dry_run = params.dry_run.unwrap_or(false);
     reader
@@ -103,32 +102,16 @@ fn validate(params: &SetTrafficSplitParams) -> Result<(), CoreError> {
     Ok(())
 }
 
-async fn lookup_service_uid(
-    reader: &dyn ClusterReader,
-    params: &SetTrafficSplitParams,
-) -> Result<Option<String>, CoreError> {
-    let service_gvk = Gvk::new("serving.knative.dev", "v1", SERVICE_KIND);
-    match reader
-        .get(&service_gvk, Some(&params.namespace), &params.service)
-        .await
-    {
-        Ok(service) => Ok(service.metadata.uid),
-        Err(CoreError::Kube(kube::Error::Api(status))) if status.is_not_found() => Ok(None),
-        Err(error) => Err(error),
-    }
-}
-
 async fn verify_revision_ownership(
     reader: &dyn ClusterReader,
     params: &SetTrafficSplitParams,
-    service_uid: Option<&str>,
 ) -> Result<(), CoreError> {
     for split in &params.splits {
         let revision_gvk = Gvk::new("serving.knative.dev", "v1", REVISION_KIND);
         let revision = reader
             .get(&revision_gvk, Some(&params.namespace), &split.revision)
             .await?;
-        if !revision_owned_by(&revision, &params.service, service_uid) {
+        if !revision_owned_by(&revision, &params.service) {
             return Err(CoreError::Config(format!(
                 "revision {}/{} is not owned by service {}/{}",
                 params.namespace, split.revision, params.namespace, params.service
@@ -138,21 +121,14 @@ async fn verify_revision_ownership(
     Ok(())
 }
 
-fn revision_owned_by(revision: &DynamicObject, service: &str, service_uid: Option<&str>) -> bool {
+fn revision_owned_by(revision: &DynamicObject, service: &str) -> bool {
     let Some(owners) = revision.metadata.owner_references.as_deref() else {
         return false;
     };
     owners.iter().any(|owner| {
-        if owner.api_version != API_VERSION || owner.name != service {
-            return false;
-        }
-        match owner.kind.as_str() {
-            SERVICE_KIND => {
-                owner.uid.is_empty() || service_uid.is_none_or(|uid| uid == owner.uid.as_str())
-            }
-            CONFIGURATION_KIND => true,
-            _ => false,
-        }
+        owner.api_version == API_VERSION
+            && owner.name == service
+            && matches!(owner.kind.as_str(), SERVICE_KIND | CONFIGURATION_KIND)
     })
 }
 
