@@ -276,34 +276,32 @@ fn collect_storage(topology: &Topology, id: &ResourceId) -> Vec<StorageRecord> {
             EdgeKind::Mounts | EdgeKind::ProvisionedBy | EdgeKind::BackedBy
         )
     }) {
-        let other = if &edge.from == id {
-            &edge.to
-        } else {
-            &edge.from
-        };
-        let other_node = topology.nodes.iter().find(|node| &node.id == other);
-        let id_node = topology.nodes.iter().find(|node| &node.id == id);
-        let id_is_storage = id_node.is_some_and(|node| {
-            matches!(
-                node.category,
-                NodeCategory::PersistentVolumeClaim
-                    | NodeCategory::PersistentVolume
-                    | NodeCategory::StorageClass
-                    | NodeCategory::CephPool
-            )
-        });
-        if edge.kind != EdgeKind::Mounts && !id_is_storage {
-            continue;
-        }
-        let pvc = if other_node
-            .is_some_and(|node| node.category == NodeCategory::PersistentVolumeClaim)
-            || edge.kind == EdgeKind::Mounts
-        {
-            other.clone()
-        } else if id_node.is_some_and(|node| node.category == NodeCategory::PersistentVolumeClaim) {
-            id.clone()
-        } else {
-            continue;
+        let from_node = topology.nodes.iter().find(|node| node.id == edge.from);
+        let to_node = topology.nodes.iter().find(|node| node.id == edge.to);
+        let from_is_pvc =
+            from_node.is_some_and(|node| node.category == NodeCategory::PersistentVolumeClaim);
+        let to_is_pvc =
+            to_node.is_some_and(|node| node.category == NodeCategory::PersistentVolumeClaim);
+        let (workload, pvc) = match edge.kind {
+            EdgeKind::Mounts => {
+                if from_is_pvc {
+                    (Some(edge.to.clone()), edge.from.clone())
+                } else if to_is_pvc {
+                    (Some(edge.from.clone()), edge.to.clone())
+                } else {
+                    continue;
+                }
+            }
+            EdgeKind::ProvisionedBy | EdgeKind::BackedBy => {
+                if from_is_pvc {
+                    (None, edge.from.clone())
+                } else if to_is_pvc {
+                    (None, edge.to.clone())
+                } else {
+                    continue;
+                }
+            }
+            _ => continue,
         };
         let access_modes = edge
             .metadata
@@ -332,15 +330,15 @@ fn collect_storage(topology: &Topology, id: &ResourceId) -> Vec<StorageRecord> {
             StorageRecord {
                 pvc: pvc.clone(),
                 volume: metadata_str(edge, "volume").map(ToOwned::to_owned),
-                storage_class: metadata_str(edge, "storage_class").map(ToOwned::to_owned),
+                storage_class: metadata_str(edge, "storage_class")
+                    .map(ToOwned::to_owned)
+                    .or_else(|| {
+                        (edge.kind == EdgeKind::ProvisionedBy).then(|| edge.to.name.clone())
+                    }),
                 access_modes,
                 capacity: None,
                 phase: None,
-                mounted_by: if edge.kind == EdgeKind::Mounts {
-                    vec![edge.from.clone()]
-                } else {
-                    Vec::new()
-                },
+                mounted_by: workload.into_iter().collect(),
                 provisioned_by: (edge.kind == EdgeKind::ProvisionedBy).then(|| edge.to.clone()),
                 backend: (edge.kind == EdgeKind::BackedBy).then(|| edge.to.clone()),
                 warnings,
