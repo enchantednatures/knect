@@ -486,7 +486,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_methods_return_internal_error_with_task() {
+    fn mutations_get_diff_missing_resource_is_not_found() {
         let dispatcher = RpcDispatcher::new(state());
         let response = dispatcher
             .dispatch(request(
@@ -502,8 +502,7 @@ mod tests {
             ))
             .expect("response");
         let error = response.error.expect("error");
-        assert_eq!(error.code, INTERNAL_ERROR);
-        assert!(error.message.contains("mutations.get_diff"));
-        assert!(error.message.contains("Task 9"));
+        assert_eq!(error.code, NOT_FOUND);
+        assert!(error.message.contains("not present"));
     }
 }
