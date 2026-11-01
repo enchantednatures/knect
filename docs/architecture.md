@@ -1,9 +1,26 @@
 # knect architecture and frozen interfaces
 
-Status: foundation milestone (Task F). The protocol in `docs/protocol.md` and
-`crates/knect-proto` is frozen; this document freezes the Rust module map so the
-discovery, graph, cache, action, tap, TUI, WebUI, and nvim tasks can work in
-parallel without moving public items.
+Status: v1.0.0 candidate. The protocol in `docs/protocol.md` and
+`crates/knect-proto` is frozen. The daemon runtime, redb cache, discovery and
+watch supervisors, Serving/Eventing topology, service-link/operator/storage/
+policy/mutation attribution, Ratatui TUI, embedded SvelteFlow WebUI, and
+`knect.nvim` core are implemented. The remaining work is TUI modals/CLI,
+nvim YAML diagnostics, container/Helm/release packaging, and the final gate.
+
+## 0. Implemented runtime
+
+- `knectd` discovers installed APIs, watches 90+ GVKs, sanitizes objects,
+  maintains a redb snapshot per context, recomputes on a 150 ms debounce, and
+  serves JSON-RPC 2.0 over HTTP/UDS plus SSE and UDS JSONL event streams.
+- The correlation pipeline is fixed at
+  `serving -> eventing -> links -> operators -> storage -> policy -> mutations`.
+- `graph.get_node_details` projects the node, redacted YAML, links, policies,
+  storage records, managedFields attribution, and warnings.
+- Fixture mode loads `testdata/fixtures` and serves the real topology without
+  constructing a Kubernetes client.
+- Tests: 163+ core library tests, exact Serving/Eventing/link/operator/storage/
+  policy/mutation fixtures, 60+ daemon tests, TUI PTY/snapshot tests, WebUI
+  unit + Playwright checks, and a Plenary nvim suite.
 
 ## 1. Dependency direction
 

@@ -1,41 +1,100 @@
 # knect
 
-knect is a Rust, headless-first observability and control-plane toolchain for
-Knative, Istio, Flagger, and Kyverno: it collects signals and builds a live
-topology of the mesh, attributes policy and traffic behavior back to concrete
-workloads and resources, and exposes that model through a headless daemon and
-purpose-built clients.
+`knect` is a Rust, headless-first observability, topology, policy-attribution,
+and control plane for Knative Serving/Eventing and its surrounding
+infrastructure: Istio, Flagger, Kyverno, Kafka/Redpanda, RabbitMQ,
+Redis/Dragonfly, Postgres/MySQL, and Rook-Ceph.
 
-## Architecture
+It separates cluster state correlation from presentation:
 
-- **knectd** — the headless daemon: watches clusters, gathers observability
-  signals, builds topology, performs policy attribution, and serves the control
-  plane API.
-- **knect** — the terminal UI (TUI) client for interactive inspection of
-  topology, signals, and policy attribution.
-- **knect.nvim** — the Neovim frontend for working with the same control plane
-  from inside the editor.
-- **knect-web** — the web UI for browsing the topology and related data.
+- **`knectd`** — the stateful daemon. It watches Kubernetes resources, builds a
+  `petgraph` topology, attributes YAML mutations through `managedFields`,
+  overlays mesh/policy state, caches snapshots in `redb`, and exposes a
+  JSON-RPC 2.0 + SSE API over a Unix socket and HTTP.
+- **`knect`** — the Ratatui terminal client and CLI. It can auto-spawn a local
+  daemon, connect to a remote daemon, inspect topology and mutations, and
+  integrate with `k9s`.
+- **`knect.nvim`** — the Neovim plugin. It provides a Lua JSON-RPC client,
+  topology/pickers/diff/tap views, and live YAML inlay hints.
+- **`knect-web`** — a Svelte 5 + SvelteFlow topology UI embedded into `knectd`
+  with `rust-embed`.
+
+## Quick start
+
+Build and test the workspace:
+
+```sh
+cargo build --workspace --locked
+cargo test --workspace --locked
+```
+
+Run the daemon against the current kubeconfig:
+
+```sh
+./target/debug/knectd
+```
+
+Run it without a cluster using the checked-in fixtures:
+
+```sh
+./target/debug/knectd --fixture testdata/fixtures
+```
+
+The daemon listens on `127.0.0.1:7420` and `/tmp/knectd.sock` by default.
+Open `http://127.0.0.1:7420/` for the embedded WebUI.
+
+Connect the TUI:
+
+```sh
+./target/debug/knect --socket /tmp/knectd.sock
+```
+
+Install the Neovim plugin by adding `nvim/` to `runtimepath`, then run
+`:Knect`, `:KnectServices`, `:KnectBrokers`, `:KnectDiff`, or `:KnectTap`.
+Optional integrations: Nui.nvim, Telescope.nvim, and Plenary.nvim (tests).
+
+## Development
+
+```sh
+make ci          # fmt + clippy + workspace tests
+make web         # build the Svelte WebUI
+make web-test    # Vitest
+make web-e2e     # Playwright (requires a Playwright browser + system deps)
+make nvim-test   # headless Plenary suite
+make e2e         # run the E2E harness against the Kind cluster
+make helm        # lint and template the Helm chart
+```
+
+The full-stack Kind E2E environment is created with:
+
+```sh
+./hack/setup-kind-e2e.sh
+./hack/teardown-kind-e2e.sh
+```
+
+It uses an isolated kubeconfig at `/tmp/knect-e2e-kubeconfig` and never
+touches the user's default kubeconfig.
+
+## Configuration
+
+Configuration is read from `~/.config/knect/config.toml`, then `KNECT_*`
+environment variables, then CLI flags. See
+[docs/configuration.md](docs/configuration.md). The read-only defaults are
+intentional: guarded write actions require both
+`daemon.allow_actions = true` and `actions.enabled = true`.
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Protocol](docs/protocol.md)
+- [Configuration](docs/configuration.md)
+- [Testing](docs/testing.md)
+- [Operations](docs/operations.md)
+- [Release](docs/release.md)
 
 ## Status
 
-`v1.0.0` in progress. This repository currently contains the project skeleton —
-toolchain, lint, CI, and documentation scaffolding. Features are not yet
-complete and nothing here should be treated as a finished capability.
-
-## Build
-
-```sh
-make ci
-```
-
-Placeholder: build instructions will be finalized as the workspace is added.
-
-## Test
-
-```sh
-make test
-```
-
-Placeholder: test instructions will be finalized as crates and test harnesses
-are added.
+`v1.0.0` release candidate. The daemon, cache, topology/correlation engines,
+TUI, WebUI, and `knect.nvim` core are implemented and tested. TUI modals/CLI,
+nvim YAML diagnostics, and the container/Helm/release hardening are the
+remaining release gates; see the open GitHub issues.
