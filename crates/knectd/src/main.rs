@@ -6,10 +6,15 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, anyhow};
 use clap::Parser;
+use knect_core::ClusterReader;
+use knect_core::actions::KubeActions;
 use knect_core::config::{Config, ConfigOverrides};
+use knect_core::kube::KubeReader;
+use knect_core::tap::{TapManagerConfig, TriggerTapManager};
 use knect_core::{NoopCache, RedbCache, SnapshotCache, snapshot_limit_bytes};
 use knectd::app::AppState;
 use knectd::error::DaemonError;
@@ -108,10 +113,46 @@ async fn main() -> anyhow::Result<()> {
     } else {
         Arc::new(NoopCache)
     };
-    let state = AppState::new(config.clone(), fixture.is_enabled()).with_cache(cache);
+    let cancel = CancellationToken::new();
+    let mut state = AppState::new(config.clone(), fixture.is_enabled()).with_cache(cache);
+    if !fixture.is_enabled() {
+        let context = config.daemon.context.as_str();
+        match KubeReader::from_context(
+            (!context.is_empty()).then_some(context),
+            args.kubeconfig.as_deref(),
+        )
+        .await
+        {
+            Ok(reader) => {
+                let reader: Arc<dyn ClusterReader> = Arc::new(reader);
+                state = state.with_cluster_reader(Arc::clone(&reader));
+                state = state.with_actions(Arc::new(KubeActions::new(Arc::clone(&reader))));
+                let tap = Arc::new(TriggerTapManager::new(
+                    Arc::clone(&reader),
+                    TapManagerConfig::from(&config.tap),
+                ));
+                state = state.with_tap(tap.clone());
+                match tokio::time::timeout(Duration::from_secs(10), tap.gc_startup()).await {
+                    Ok(Ok(removed)) if !removed.is_empty() => {
+                        tracing::info!(removed = removed.len(), "removed orphaned tap resources");
+                    }
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => {
+                        tracing::warn!(%error, "tap startup GC failed; will retry on first tap.start");
+                    }
+                    Err(_) => tracing::warn!("tap startup GC timed out"),
+                }
+            }
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "cannot construct the Kubernetes reader; live tap and log features are disabled"
+                );
+            }
+        }
+    }
     let socket_path = PathBuf::from(&config.daemon.socket_path);
     let http_addr = config.daemon.http_addr.clone();
-    let cancel = CancellationToken::new();
 
     tracing::info!(
         version = knectd::VERSION,
@@ -154,6 +195,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     cancel.cancel();
+    knectd::tap_callback::shutdown_all().await;
     while let Some(joined) = tasks.join_next().await {
         match joined {
             Ok(Ok(())) => {}

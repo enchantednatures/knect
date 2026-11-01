@@ -15,8 +15,8 @@ use knect_core::config::Config;
 use knect_core::graph::diff_topologies;
 use knect_core::store::ResourceStore;
 use knect_core::{
-    ActionExecutor, DisabledActions, NoopCache, NoopTapManager, SecretMaterialRegistry,
-    SnapshotCache, TapManager,
+    ActionExecutor, ClusterReader, DisabledActions, NoopCache, NoopTapManager,
+    SecretMaterialRegistry, SnapshotCache, TapManager,
 };
 use knect_proto::events::{Heartbeat, SseEvent, SseEventKind};
 use knect_proto::graph::Topology;
@@ -43,6 +43,9 @@ pub struct AppState {
     pub actions: Arc<dyn ActionExecutor>,
     /// Tap manager. Foundation implementation is [`NoopTapManager`].
     pub tap: Arc<dyn TapManager>,
+    /// Kubernetes reader shared with tap and log streaming. `None` in fixture
+    /// mode or when client construction failed.
+    pub reader: Option<Arc<dyn ClusterReader>>,
     /// Monotonic topology generation.
     pub generation: Arc<AtomicU64>,
     /// Process start instant for uptime.
@@ -80,6 +83,7 @@ impl AppState {
             secret_material: Arc::new(SecretMaterialRegistry::new()),
             actions: Arc::new(DisabledActions),
             tap: Arc::new(NoopTapManager),
+            reader: None,
             generation: Arc::new(AtomicU64::new(0)),
             started_at: Instant::now(),
             started_at_utc: Utc::now(),
@@ -117,6 +121,13 @@ impl AppState {
     #[must_use]
     pub fn with_tap(mut self, tap: Arc<dyn TapManager>) -> Self {
         self.tap = tap;
+        self
+    }
+
+    /// Shares a Kubernetes reader with tap and log streaming.
+    #[must_use]
+    pub fn with_cluster_reader(mut self, reader: Arc<dyn ClusterReader>) -> Self {
+        self.reader = Some(reader);
         self
     }
 

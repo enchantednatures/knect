@@ -1,0 +1,13 @@
+{
+  "specversion": "1.0",
+  "id": "ce-order-1",
+  "source": "/apis/eventing.knative.dev/v1/namespaces/default/brokers/orders",
+  "type": "order.created",
+  "subject": "orders/42",
+  "time": "2026-11-01T12:00:00Z",
+  "datacontenttype": "application/json",
+  "data": {
+    "order_id": "42",
+    "total": 19.99
+  }
+}

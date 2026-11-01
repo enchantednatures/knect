@@ -68,14 +68,12 @@ pub async fn run(_harness: &Harness) -> Result<(), ScenarioError> {
         return Err(protocol("node details did not include YAML"));
     }
     for array in ["links", "policies", "storage", "mutations"] {
-        if details[array]
-            .as_array()
-            .is_none_or(|values| !values.is_empty())
-        {
-            return Err(protocol(format!(
-                "node details {array} must be an empty array until its task lands"
-            )));
+        if details[array].as_array().is_none() {
+            return Err(protocol(format!("node details {array} must be an array")));
         }
+    }
+    if details["policies"].as_array().is_none_or(Vec::is_empty) {
+        return Err(protocol("node details policies must be populated"));
     }
 
     let client = reqwest::Client::builder()

@@ -192,6 +192,9 @@ impl Runtime {
         if let Some(reader) = &self.reader_override {
             return Ok(Arc::clone(reader));
         }
+        if let Some(reader) = &self.state.reader {
+            return Ok(Arc::clone(reader));
+        }
         let context = self.state.config.daemon.context.as_str();
         let reader = KubeReader::from_context(
             (!context.is_empty()).then_some(context),

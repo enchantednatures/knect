@@ -177,10 +177,38 @@ pub trait ClusterReader: Send + Sync {
     fn dry_run_create(&self, obj: DynamicObject)
     -> CoreFuture<'_, Result<DryRunResult, CoreError>>;
 
+    /// Creates an object.
+    ///
+    /// The default returns [`CoreError::Unsupported`] so read-only readers do
+    /// not have to fake write capability.
+    fn create(&self, _obj: DynamicObject) -> CoreFuture<'_, Result<DynamicObject, CoreError>> {
+        Box::pin(async move {
+            Err(CoreError::Unsupported(
+                "object creation is not supported by this reader".to_owned(),
+            ))
+        })
+    }
+
+    /// Deletes one object. A missing object is treated as already deleted by
+    /// implementations that can distinguish `404 NotFound`.
+    fn delete<'a>(
+        &'a self,
+        _gvk: &'a Gvk,
+        _ns: Option<&'a str>,
+        _name: &'a str,
+    ) -> CoreFuture<'a, Result<(), CoreError>> {
+        Box::pin(async move {
+            Err(CoreError::Unsupported(
+                "object deletion is not supported by this reader".to_owned(),
+            ))
+        })
+    }
+
     /// Streams pod logs.
     ///
-    /// The foundation implementation yields exactly one
-    /// [`CoreError::Unsupported`]; Task 12 replaces it with a real stream.
+    /// Lines are returned without their trailing newline. When
+    /// [`LogOptions::timestamps`] is set, implementations preserve the
+    /// kubelet's RFC 3339 timestamp prefix.
     fn log_stream(
         &self,
         ns: &str,

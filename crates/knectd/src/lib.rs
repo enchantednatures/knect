@@ -13,6 +13,7 @@ pub mod fixture;
 pub mod logging;
 pub mod rpc;
 pub mod runtime;
+pub mod tap_callback;
 pub mod transport;
 pub mod webui;
 

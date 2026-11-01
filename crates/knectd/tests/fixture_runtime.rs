@@ -68,10 +68,7 @@ async fn fixture_runtime_serves_serving_and_eventing_over_rpc() {
             .as_deref()
             .is_some_and(|yaml| yaml.contains("Service"))
     );
-    assert!(details.links.is_empty());
-    assert!(details.policies.is_empty());
-    assert!(details.storage.is_empty());
-    assert!(details.mutations.is_empty());
+    assert!(!details.policies.is_empty());
 
     cancel.cancel();
     runtime.run().await.expect("runtime stops");

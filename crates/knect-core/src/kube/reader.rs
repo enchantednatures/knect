@@ -1,17 +1,19 @@
 //! Production `kube::Client` wrapper implementing [`ClusterReader`].
 //!
 //! Discovery prefers aggregated discovery and falls back to the legacy
-//! per-group discovery flow. Watch streaming is backed by the `kube` runtime
-//! watcher. Log streaming returns a single typed [`CoreError::Unsupported`]
-//! until Task 12 installs the real implementation. No method here contacts a
-//! cluster at construction time.
+//! per-group discovery flow. Watch and pod-log streaming are backed by the
+//! `kube` runtime. No method here contacts a cluster at construction time.
 
 use std::path::Path;
 
-use futures::StreamExt;
 use futures::stream::BoxStream;
+use futures::{AsyncBufRead, AsyncBufReadExt, StreamExt};
+use k8s_openapi::api::core::v1::Pod;
 use knect_proto::Gvk;
-use kube::api::{Api, ApiResource, DynamicObject, ListParams, Patch, PatchParams, PostParams};
+use kube::api::{
+    Api, ApiResource, DeleteParams, DynamicObject, ListParams, LogParams, Patch, PatchParams,
+    PostParams,
+};
 use kube::config::{KubeConfigOptions, Kubeconfig};
 use kube::discovery::{Discovery, Scope};
 use kube::runtime::{WatchStreamExt, watcher};
@@ -224,19 +226,154 @@ impl ClusterReader for KubeReader {
         })
     }
 
+    fn create(&self, obj: DynamicObject) -> CoreFuture<'_, Result<DynamicObject, CoreError>> {
+        Box::pin(async move {
+            let types = obj.types.as_ref().ok_or_else(|| {
+                CoreError::Store("create requires apiVersion and kind on the object".to_owned())
+            })?;
+            let gvk = Gvk::from_api_version(&types.api_version, types.kind.clone());
+            let resource = dynamic_resource(&gvk);
+            let namespace = obj.metadata.namespace.clone();
+            let api = match namespace.as_deref() {
+                Some(namespace) => Api::namespaced_with(self.client.clone(), namespace, &resource),
+                None => Api::all_with(self.client.clone(), &resource),
+            };
+            let params = PostParams {
+                field_manager: Some("knectd".to_owned()),
+                ..PostParams::default()
+            };
+            api.create(&params, &obj).await.map_err(CoreError::Kube)
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        gvk: &'a Gvk,
+        ns: Option<&'a str>,
+        name: &'a str,
+    ) -> CoreFuture<'a, Result<(), CoreError>> {
+        Box::pin(async move {
+            let api = self.api_for(gvk, ns);
+            match api.delete(name, &DeleteParams::default()).await {
+                Ok(_) => Ok(()),
+                Err(kube::Error::Api(status)) if status.code == 404 => Ok(()),
+                Err(error) => Err(CoreError::Kube(error)),
+            }
+        })
+    }
+
     fn log_stream(
         &self,
-        _ns: &str,
-        _pod: &str,
-        _opts: LogOptions,
+        ns: &str,
+        pod: &str,
+        opts: LogOptions,
     ) -> BoxStream<'static, Result<String, CoreError>> {
-        futures::stream::once(async {
-            Err(CoreError::Unsupported(
-                "log streaming is implemented by Task 12".to_owned(),
-            ))
-        })
+        let client = self.client.clone();
+        let namespace = ns.to_owned();
+        let pod_name = pod.to_owned();
+        futures::stream::unfold(
+            LogState::Start {
+                client,
+                namespace,
+                pod_name,
+                opts,
+            },
+            |state| async move {
+                let mut state = state;
+                loop {
+                    match state {
+                        LogState::Start {
+                            client,
+                            namespace,
+                            pod_name,
+                            opts,
+                        } => {
+                            let api: Api<Pod> = Api::namespaced(client, &namespace);
+                            let container = match resolve_container(&api, &pod_name, &opts).await {
+                                Ok(container) => container,
+                                Err(error) => {
+                                    return Some((Err(error), LogState::Done));
+                                }
+                            };
+                            let params = LogParams {
+                                container,
+                                follow: opts.follow,
+                                tail_lines: opts.tail_lines.map(i64::from),
+                                timestamps: opts.timestamps,
+                                ..LogParams::default()
+                            };
+                            match api.log_stream(&pod_name, &params).await {
+                                Ok(reader) => {
+                                    state = LogState::Reading {
+                                        reader: Box::new(reader),
+                                    };
+                                }
+                                Err(error) => {
+                                    return Some((Err(CoreError::Kube(error)), LogState::Done));
+                                }
+                            }
+                        }
+                        LogState::Reading { mut reader } => {
+                            let mut line = String::new();
+                            match reader.read_line(&mut line).await {
+                                Ok(0) => return None,
+                                Ok(_) => {
+                                    let line = line.trim_end_matches(['\r', '\n']).to_owned();
+                                    return Some((Ok(line), LogState::Reading { reader }));
+                                }
+                                Err(error) => {
+                                    return Some((
+                                        Err(CoreError::Internal(format!(
+                                            "pod log stream read failed: {error}"
+                                        ))),
+                                        LogState::Done,
+                                    ));
+                                }
+                            }
+                        }
+                        LogState::Done => return None,
+                    }
+                }
+            },
+        )
         .boxed()
     }
+}
+
+enum LogState {
+    Start {
+        client: kube::Client,
+        namespace: String,
+        pod_name: String,
+        opts: LogOptions,
+    },
+    Reading {
+        reader: Box<dyn AsyncBufRead + Send + Unpin>,
+    },
+    Done,
+}
+
+async fn resolve_container(
+    api: &Api<Pod>,
+    pod_name: &str,
+    opts: &LogOptions,
+) -> Result<Option<String>, CoreError> {
+    if let Some(container) = &opts.container {
+        return Ok(Some(container.clone()));
+    }
+    let pod = api.get(pod_name).await.map_err(CoreError::Kube)?;
+    if let Some(annotations) = &pod.metadata.annotations
+        && let Some(container) = annotations
+            .get("kubectl.kubernetes.io/default-container")
+            .cloned()
+    {
+        return Ok(Some(container));
+    }
+    Ok(pod.spec.and_then(|spec| {
+        spec.containers
+            .first()
+            .map(|container| container.name.clone())
+    }))
 }
 
 /// Builds a dynamic API resource, guessing the plural.

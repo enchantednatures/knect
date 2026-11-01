@@ -66,6 +66,28 @@ pub struct WatchCall {
     pub namespace: Option<String>,
 }
 
+/// One recorded `delete` call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteCall {
+    /// Deleted group, version, and kind.
+    pub gvk: Gvk,
+    /// Deleted namespace.
+    pub namespace: Option<String>,
+    /// Deleted object name.
+    pub name: String,
+}
+
+/// One recorded `log_stream` call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogCall {
+    /// Pod namespace.
+    pub namespace: String,
+    /// Pod name.
+    pub pod: String,
+    /// Requested log options.
+    pub options: LogOptions,
+}
+
 /// Every request recorded by a [`FakeReader`].
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RecordedCalls {
@@ -81,6 +103,12 @@ pub struct RecordedCalls {
     pub dry_run_create: Vec<DynamicObject>,
     /// Watch calls in order.
     pub watch: Vec<WatchCall>,
+    /// Created object payloads in order.
+    pub create: Vec<DynamicObject>,
+    /// Delete calls in order.
+    pub delete: Vec<DeleteCall>,
+    /// Log stream calls in order.
+    pub log_stream: Vec<LogCall>,
 }
 
 #[derive(Default)]
@@ -92,6 +120,9 @@ struct FakeState {
     watch_script: VecDeque<Result<WatchEvent, CoreError>>,
     patch_responses: VecDeque<Result<DynamicObject, CoreError>>,
     dry_run_responses: VecDeque<Result<DryRunResult, CoreError>>,
+    create_responses: VecDeque<Result<DynamicObject, CoreError>>,
+    delete_responses: VecDeque<Result<(), CoreError>>,
+    log_script: VecDeque<Result<String, CoreError>>,
     calls: RecordedCalls,
 }
 
@@ -191,6 +222,29 @@ impl FakeReader {
         self
     }
 
+    /// Appends one scripted create response. An unscripted create stores and
+    /// returns the supplied object.
+    #[must_use]
+    pub fn with_create_response(self, response: Result<DynamicObject, CoreError>) -> Self {
+        self.lock().create_responses.push_back(response);
+        self
+    }
+
+    /// Appends one scripted delete response. An unscripted delete removes the
+    /// object from every index and succeeds.
+    #[must_use]
+    pub fn with_delete_response(self, response: Result<(), CoreError>) -> Self {
+        self.lock().delete_responses.push_back(response);
+        self
+    }
+
+    /// Replaces the pod-log script.
+    #[must_use]
+    pub fn with_log_stream(self, script: Vec<Result<String, CoreError>>) -> Self {
+        self.lock().log_script = script.into();
+        self
+    }
+
     /// Returns every recorded call.
     #[must_use]
     pub fn calls(&self) -> RecordedCalls {
@@ -231,6 +285,24 @@ impl FakeReader {
     #[must_use]
     pub fn watch_calls(&self) -> Vec<WatchCall> {
         self.lock().calls.watch.clone()
+    }
+
+    /// Returns recorded create payloads.
+    #[must_use]
+    pub fn create_calls(&self) -> Vec<DynamicObject> {
+        self.lock().calls.create.clone()
+    }
+
+    /// Returns recorded delete calls.
+    #[must_use]
+    pub fn delete_calls(&self) -> Vec<DeleteCall> {
+        self.lock().calls.delete.clone()
+    }
+
+    /// Returns recorded log stream calls.
+    #[must_use]
+    pub fn log_calls(&self) -> Vec<LogCall> {
+        self.lock().calls.log_stream.clone()
     }
 
     fn lock(&self) -> MutexGuard<'_, FakeState> {
@@ -358,18 +430,70 @@ impl ClusterReader for FakeReader {
         })
     }
 
+    fn create(&self, obj: DynamicObject) -> CoreFuture<'_, Result<DynamicObject, CoreError>> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.create.push(obj.clone());
+            if let Some(response) = state.create_responses.pop_front() {
+                return response;
+            }
+            let id = resource_id(&obj);
+            let resource = dynamic_resource(&id.gvk());
+            let namespace = id.namespace.clone();
+            state
+                .lists
+                .entry((resource, namespace))
+                .or_default()
+                .push(obj.clone());
+            state.objects.insert(id, obj.clone());
+            Ok(obj)
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        gvk: &'a Gvk,
+        ns: Option<&'a str>,
+        name: &'a str,
+    ) -> CoreFuture<'a, Result<(), CoreError>> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.delete.push(DeleteCall {
+                gvk: gvk.clone(),
+                namespace: ns.map(ToOwned::to_owned),
+                name: name.to_owned(),
+            });
+            if let Some(response) = state.delete_responses.pop_front() {
+                return response;
+            }
+            let id = ResourceId::new(
+                gvk.api_version(),
+                gvk.kind.clone(),
+                ns.map(ToOwned::to_owned),
+                name,
+            );
+            state.objects.remove(&id);
+            for objects in state.lists.values_mut() {
+                objects.retain(|object| resource_id(object) != id);
+            }
+            Ok(())
+        })
+    }
+
     fn log_stream(
         &self,
-        _ns: &str,
-        _pod: &str,
-        _opts: LogOptions,
+        ns: &str,
+        pod: &str,
+        opts: LogOptions,
     ) -> BoxStream<'static, Result<String, CoreError>> {
-        futures::stream::once(async {
-            Err(CoreError::Unsupported(
-                "FakeReader does not stream logs".to_owned(),
-            ))
-        })
-        .boxed()
+        let mut state = self.lock();
+        state.calls.log_stream.push(LogCall {
+            namespace: ns.to_owned(),
+            pod: pod.to_owned(),
+            options: opts,
+        });
+        let script: Vec<Result<String, CoreError>> = state.log_script.drain(..).collect();
+        futures::stream::iter(script).boxed()
     }
 }
 

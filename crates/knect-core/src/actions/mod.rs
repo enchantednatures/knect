@@ -1,13 +1,23 @@
 //! Guarded write-action boundary.
 //!
-//! Task 11 replaces [`DisabledActions`] with the validated executor. The
-//! foundation implementation fails closed with a typed
-//! [`CoreError::Action`] that maps to `actions_disabled` (-32006).
+//! [`KubeActions`] performs every mutation through the [`ClusterReader`]
+//! boundary and validates the request before a request reaches the API server.
+//! [`DisabledActions`] remains the fail-closed fallback installed when the
+//! daemon has no action driver, so a misconfigured daemon cannot write.
+//!
+//! [`ClusterReader`]: crate::kube::ClusterReader
+
+mod executor;
+mod flagger;
+mod traffic;
+mod validate;
 
 use futures::future::BoxFuture;
 use knect_proto::events::ActionResult;
 use knect_proto::policy::ValidationResult;
 use knect_proto::rpc::{FlaggerControlParams, SetTrafficSplitParams, ValidateManifestParams};
+
+pub use executor::KubeActions;
 
 use crate::error::CoreError;
 

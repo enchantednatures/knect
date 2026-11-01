@@ -1,13 +1,26 @@
 //! CloudEvent tap boundary.
 //!
-//! Task 12 replaces [`NoopTapManager`] with the ephemeral Trigger manager. The
-//! foundation implementation never mutates a cluster.
+//! [`TriggerTapManager`] creates an ephemeral Knative Trigger per tap, receives
+//! CloudEvents on a token-guarded callback, and retains a bounded ring of
+//! events for the daemon's SSE hub. The callback HTTP listener lives in
+//! `knectd`; this module owns the security-sensitive delivery and lifecycle
+//! logic so it is testable without a cluster.
+
+mod callback;
+mod manager;
+mod token;
+mod trigger;
+
+use std::net::SocketAddr;
 
 use futures::future::BoxFuture;
 use knect_proto::rpc::{TapStartParams, TapStopResult};
 use knect_proto::tap::TapHandle;
 
 use crate::error::CoreError;
+
+pub use callback::{TapCallbackRequest, TapDelivery, redact_headers};
+pub use manager::{TapManagerConfig, TriggerTapManager};
 
 /// Manages ephemeral CloudEvent taps.
 pub trait TapManager: Send + Sync {
@@ -22,9 +35,39 @@ pub trait TapManager: Send + Sync {
 
     /// Reaps expired taps and returns their IDs.
     fn reap(&self) -> BoxFuture<'_, Result<Vec<String>, CoreError>>;
+
+    /// Delivers one token-authenticated callback request to a tap.
+    ///
+    /// The default rejects the delivery so existing test doubles keep compiling
+    /// without claiming callback support.
+    fn deliver(
+        &self,
+        _tap_id: &str,
+        _token: &str,
+        _request: TapCallbackRequest,
+    ) -> BoxFuture<'_, Result<TapDelivery, CoreError>> {
+        Box::pin(async move {
+            Err(CoreError::Unsupported(
+                "tap delivery is not supported by this manager".to_owned(),
+            ))
+        })
+    }
+
+    /// Records the address the daemon callback listener actually bound.
+    fn set_callback_addr(&self, _addr: SocketAddr) {}
+
+    /// Returns the number of live tap reservations.
+    fn active_count(&self) -> usize {
+        0
+    }
+
+    /// Stops every tap and releases manager-owned background work.
+    fn shutdown(&self) -> BoxFuture<'_, Result<(), CoreError>> {
+        Box::pin(async move { Ok(()) })
+    }
 }
 
-/// Tap manager used until Task 12 installs the real implementation.
+/// Tap manager used until a real implementation is installed.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NoopTapManager;
 
@@ -32,7 +75,7 @@ impl TapManager for NoopTapManager {
     fn start(&self, _params: TapStartParams) -> BoxFuture<'_, Result<TapHandle, CoreError>> {
         Box::pin(async move {
             Err(CoreError::Unsupported(
-                "tap.start is implemented by Task 12".to_owned(),
+                "tap.start requires a Kubernetes reader".to_owned(),
             ))
         })
     }
@@ -67,6 +110,8 @@ mod tests {
                 .expect("stop")
                 .removed
         );
+        assert_eq!(manager.active_count(), 0);
+        manager.shutdown().await.expect("shutdown");
 
         let error = manager
             .start(TapStartParams {
