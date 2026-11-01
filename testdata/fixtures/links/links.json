@@ -1,0 +1,475 @@
+[
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "order-processor",
+      "namespace": "knect-e2e",
+      "uid": "uid-kservice-order",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {},
+    "status": {
+      "url": "http://order-processor.knect-e2e.sslip.io",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Revision",
+    "metadata": {
+      "name": "order-processor-00001",
+      "namespace": "knect-e2e",
+      "uid": "uid-revision-order-00001",
+      "creationTimestamp": "2026-10-31T21:33:10Z",
+      "labels": {
+        "serving.knative.dev/service": "order-processor"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "order-processor",
+          "image": "nginxinc/nginx-unprivileged:1.27.4",
+          "env": [
+            {
+              "name": "REDIS_URL",
+              "valueFrom": {
+                "secretKeyRef": {
+                  "name": "redis-credentials",
+                  "key": "REDIS_URL"
+                }
+              }
+            },
+            {
+              "name": "POSTGRES_URL",
+              "valueFrom": {
+                "configMapKeyRef": {
+                  "name": "order-config",
+                  "key": "POSTGRES_URL"
+                }
+              }
+            },
+            {
+              "name": "MYSQL_DSN",
+              "value": "mysql://app:mysql-pass@mysql-e2e:3306/app"
+            },
+            {
+              "name": "AMQP_URL",
+              "value": "amqp://guest:guest@rabbitmq:5672/%2f"
+            },
+            {
+              "name": "KAFKA_BOOTSTRAP",
+              "value": "kafka-bootstrap:9092"
+            },
+            {
+              "name": "BROKER_CLUSTER",
+              "value": "kafka-bootstrap.knect-e2e.svc.cluster.local:9092"
+            },
+            {
+              "name": "INVENTORY",
+              "value": "inventory-service.shared.svc.cluster.local"
+            },
+            {
+              "name": "SERVICE_SHORT",
+              "value": "postgres-e2e-rw.knect-e2e"
+            },
+            {
+              "name": "REDIS_PLAIN",
+              "value": "redis-master:6379"
+            },
+            {
+              "name": "REDIS_IP",
+              "value": "10.0.0.10:6379"
+            },
+            {
+              "name": "CACHE_CR",
+              "value": "redis-cache:6379"
+            },
+            {
+              "name": "MISSING_DB",
+              "value": "postgres://ghost-db:5432/app"
+            },
+            {
+              "name": "EXTERNAL",
+              "value": "https://api.example.com/v1"
+            },
+            {
+              "name": "LOCAL",
+              "value": "localhost:8080"
+            },
+            {
+              "name": "FREE_TEXT",
+              "value": "hello world"
+            },
+            {
+              "name": "EXTERNAL_PORT",
+              "value": "example.com:6379"
+            }
+          ],
+          "envFrom": [
+            {
+              "secretRef": {
+                "name": "shared-env"
+              }
+            }
+          ],
+          "ports": [
+            {
+              "containerPort": 8080,
+              "name": "http1"
+            }
+          ]
+        }
+      ],
+      "volumes": [
+        {
+          "name": "creds",
+          "secret": {
+            "secretName": "redis-credentials"
+          }
+        },
+        {
+          "name": "settings",
+          "configMap": {
+            "name": "order-config"
+          }
+        }
+      ]
+    },
+    "status": {
+      "actualReplicas": 1,
+      "desiredReplicas": 1,
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:22Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "order-worker",
+      "namespace": "knect-e2e",
+      "uid": "uid-pod-order-worker",
+      "creationTimestamp": "2026-10-31T21:33:20Z",
+      "labels": {
+        "serving.knative.dev/service": "order-processor"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "worker",
+          "image": "busybox:1.37",
+          "env": [
+            {
+              "name": "AMQP_HOST",
+              "value": "rabbitmq:5672"
+            }
+          ]
+        }
+      ]
+    },
+    "status": {
+      "phase": "Running"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Secret",
+    "metadata": {
+      "name": "redis-credentials",
+      "namespace": "knect-e2e",
+      "uid": "uid-secret-redis-credentials",
+      "creationTimestamp": "2026-10-31T21:32:00Z"
+    },
+    "type": "Opaque",
+    "data": {
+      "REDIS_URL": "cmVkaXM6Ly86aHVudGVyMi1rbmVjdC1zZW50aW5lbEByZWRpcy1tYXN0ZXIua25lY3QtZTJlLnN2Yy5jbHVzdGVyLmxvY2FsOjYzNzkvMA==",
+      "REDIS_HOST": "cmVkaXMtbWFzdGVyOjYzNzk="
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Secret",
+    "metadata": {
+      "name": "shared-env",
+      "namespace": "knect-e2e",
+      "uid": "uid-secret-shared-env",
+      "creationTimestamp": "2026-10-31T21:32:10Z"
+    },
+    "type": "Opaque",
+    "stringData": {
+      "BROKER_URL": "kafka://kafka-bootstrap.knect-e2e.svc.cluster.local:9092"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "ConfigMap",
+    "metadata": {
+      "name": "order-config",
+      "namespace": "knect-e2e",
+      "uid": "uid-configmap-order-config",
+      "creationTimestamp": "2026-10-31T21:32:20Z"
+    },
+    "data": {
+      "POSTGRES_URL": "postgres://order:cm-secret@postgres-e2e-rw:5432/orders",
+      "IGNORE_ME": "not-a-connection"
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1alpha1",
+    "kind": "ServiceBinding",
+    "metadata": {
+      "name": "order-binding",
+      "namespace": "knect-e2e",
+      "uid": "uid-servicebinding-order",
+      "creationTimestamp": "2026-10-31T21:33:30Z"
+    },
+    "spec": {
+      "subject": {
+        "apiVersion": "serving.knative.dev/v1",
+        "kind": "Revision",
+        "name": "order-processor-00001",
+        "namespace": "knect-e2e"
+      },
+      "service": {
+        "apiVersion": "serving.knative.dev/v1",
+        "kind": "Service",
+        "name": "order-processor",
+        "namespace": "knect-e2e"
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:25Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "sources.knative.dev/v1",
+    "kind": "SinkBinding",
+    "metadata": {
+      "name": "order-sink-binding",
+      "namespace": "knect-e2e",
+      "uid": "uid-sinkbinding-order",
+      "creationTimestamp": "2026-10-31T21:33:35Z"
+    },
+    "spec": {
+      "subject": {
+        "ref": {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Revision",
+          "name": "order-processor-00001",
+          "namespace": "knect-e2e"
+        }
+      },
+      "sink": {
+        "ref": {
+          "apiVersion": "v1",
+          "kind": "Service",
+          "name": "kafka-bootstrap",
+          "namespace": "knect-e2e"
+        }
+      }
+    },
+    "status": {
+      "sinkUri": "http://kafka-bootstrap.knect-e2e.svc.cluster.local",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:26Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "redis-master",
+      "namespace": "knect-e2e",
+      "uid": "uid-service-redis-master",
+      "creationTimestamp": "2026-10-31T21:30:00Z"
+    },
+    "spec": {
+      "clusterIP": "10.0.0.10",
+      "ports": [
+        {
+          "name": "redis",
+          "port": 6379,
+          "targetPort": 6379
+        }
+      ],
+      "selector": {
+        "app": "redis"
+      }
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "postgres-e2e-rw",
+      "namespace": "knect-e2e",
+      "uid": "uid-service-postgres-rw",
+      "creationTimestamp": "2026-10-31T21:30:10Z"
+    },
+    "spec": {
+      "clusterIP": "10.0.0.20",
+      "ports": [
+        {
+          "name": "postgres",
+          "port": 5432,
+          "targetPort": 5432
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "mysql-e2e",
+      "namespace": "knect-e2e",
+      "uid": "uid-service-mysql",
+      "creationTimestamp": "2026-10-31T21:30:20Z"
+    },
+    "spec": {
+      "clusterIP": "10.0.0.30",
+      "ports": [
+        {
+          "name": "mysql",
+          "port": 3306,
+          "targetPort": 3306
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "kafka-bootstrap",
+      "namespace": "knect-e2e",
+      "uid": "uid-service-kafka",
+      "creationTimestamp": "2026-10-31T21:30:30Z"
+    },
+    "spec": {
+      "clusterIP": "10.0.0.40",
+      "ports": [
+        {
+          "name": "kafka",
+          "port": 9092,
+          "targetPort": 9092
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "rabbitmq",
+      "namespace": "knect-e2e",
+      "uid": "uid-service-rabbitmq",
+      "creationTimestamp": "2026-10-31T21:30:40Z"
+    },
+    "spec": {
+      "clusterIP": "10.0.0.50",
+      "ports": [
+        {
+          "name": "amqp",
+          "port": 5672,
+          "targetPort": 5672
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "inventory-service",
+      "namespace": "shared",
+      "uid": "uid-service-inventory",
+      "creationTimestamp": "2026-10-31T21:30:50Z"
+    },
+    "spec": {
+      "clusterIP": "10.0.1.10",
+      "ports": [
+        {
+          "name": "http",
+          "port": 8080,
+          "targetPort": 8080
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Endpoints",
+    "metadata": {
+      "name": "redis-master",
+      "namespace": "knect-e2e",
+      "uid": "uid-endpoints-redis-master",
+      "creationTimestamp": "2026-10-31T21:30:05Z"
+    },
+    "subsets": [
+      {
+        "addresses": [
+          {
+            "ip": "10.0.0.10",
+            "hostname": "redis-primary"
+          }
+        ],
+        "ports": [
+          {
+            "name": "redis",
+            "port": 6379
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "apiVersion": "redis.redis.opstreelabs.in/v1beta2",
+    "kind": "RedisCluster",
+    "metadata": {
+      "name": "redis-cache",
+      "namespace": "knect-e2e",
+      "uid": "uid-rediscluster-cache",
+      "creationTimestamp": "2026-10-31T21:31:00Z"
+    },
+    "spec": {
+      "kubernetesConfig": {
+        "image": "quay.io/opstree/redis:latest"
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:31:30Z"
+        }
+      ]
+    }
+  }
+]

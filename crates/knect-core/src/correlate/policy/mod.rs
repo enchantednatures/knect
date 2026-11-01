@@ -7,6 +7,10 @@ pub mod flagger;
 pub mod istio;
 pub mod kyverno;
 
+mod redact;
+mod resolve;
+mod support;
+
 use crate::correlate::{CorrelationContext, Correlator};
 use crate::error::CoreError;
 use crate::graph::GraphBuilder;

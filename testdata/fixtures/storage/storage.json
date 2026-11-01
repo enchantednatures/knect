@@ -1,0 +1,542 @@
+[
+  {
+    "apiVersion": "storage.k8s.io/v1",
+    "kind": "StorageClass",
+    "metadata": {
+      "name": "rook-ceph-block",
+      "uid": "uid-sc-block",
+      "creationTimestamp": "2026-10-31T21:30:00Z",
+      "labels": { "app.kubernetes.io/part-of": "knect" }
+    },
+    "provisioner": "rook-ceph.rbd.csi.ceph.com",
+    "reclaimPolicy": "Delete",
+    "volumeBindingMode": "WaitForFirstConsumer",
+    "allowVolumeExpansion": true,
+    "parameters": {
+      "clusterID": "rook-ceph",
+      "pool": "replicated",
+      "imageFeatures": "layering,fast-diff,object-map,deep-flatten,exclusive-lock"
+    }
+  },
+  {
+    "apiVersion": "storage.k8s.io/v1",
+    "kind": "StorageClass",
+    "metadata": {
+      "name": "rook-cephfs",
+      "uid": "uid-sc-cephfs",
+      "creationTimestamp": "2026-10-31T21:30:01Z",
+      "labels": { "app.kubernetes.io/part-of": "knect" }
+    },
+    "provisioner": "rook-ceph.cephfs.csi.ceph.com",
+    "reclaimPolicy": "Delete",
+    "volumeBindingMode": "Immediate",
+    "parameters": {
+      "clusterID": "rook-ceph",
+      "fsName": "cephfs",
+      "pool": "data0"
+    }
+  },
+  {
+    "apiVersion": "ceph.rook.io/v1",
+    "kind": "CephBlockPool",
+    "metadata": {
+      "name": "replicated",
+      "namespace": "rook-ceph",
+      "uid": "uid-ceph-block",
+      "creationTimestamp": "2026-10-31T21:20:00Z"
+    },
+    "spec": { "replicated": { "size": 3 } },
+    "status": { "phase": "Ready" }
+  },
+  {
+    "apiVersion": "ceph.rook.io/v1",
+    "kind": "CephFilesystem",
+    "metadata": {
+      "name": "cephfs",
+      "namespace": "rook-ceph",
+      "uid": "uid-ceph-fs",
+      "creationTimestamp": "2026-10-31T21:20:01Z"
+    },
+    "spec": {
+      "metadataPool": { "replicated": { "size": 3 } },
+      "dataPools": [{ "name": "data0", "replicated": { "size": 3 } }]
+    },
+    "status": { "phase": "Ready" }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "PersistentVolume",
+    "metadata": {
+      "name": "pvc-storage-data",
+      "uid": "uid-pv-storage-data",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "accessModes": ["ReadWriteOnce"],
+      "capacity": { "storage": "5Gi" },
+      "claimRef": {
+        "apiVersion": "v1",
+        "kind": "PersistentVolumeClaim",
+        "name": "storage-data",
+        "namespace": "knect-e2e"
+      },
+      "persistentVolumeReclaimPolicy": "Delete",
+      "storageClassName": "rook-ceph-block"
+    },
+    "status": { "phase": "Bound" }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "PersistentVolume",
+    "metadata": {
+      "name": "pvc-shared-assets",
+      "uid": "uid-pv-shared-assets",
+      "creationTimestamp": "2026-10-31T21:33:01Z"
+    },
+    "spec": {
+      "accessModes": ["ReadWriteMany"],
+      "capacity": { "storage": "10Gi" },
+      "claimRef": {
+        "apiVersion": "v1",
+        "kind": "PersistentVolumeClaim",
+        "name": "shared-assets",
+        "namespace": "knect-e2e"
+      },
+      "persistentVolumeReclaimPolicy": "Retain",
+      "storageClassName": "rook-cephfs"
+    },
+    "status": { "phase": "Bound" }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "PersistentVolume",
+    "metadata": {
+      "name": "pvc-single-data",
+      "uid": "uid-pv-single-data",
+      "creationTimestamp": "2026-10-31T21:33:02Z"
+    },
+    "spec": {
+      "accessModes": ["ReadWriteOnce"],
+      "capacity": { "storage": "2Gi" },
+      "claimRef": {
+        "apiVersion": "v1",
+        "kind": "PersistentVolumeClaim",
+        "name": "single-data",
+        "namespace": "knect-e2e"
+      },
+      "persistentVolumeReclaimPolicy": "Delete",
+      "storageClassName": "rook-ceph-block"
+    },
+    "status": { "phase": "Bound" }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "PersistentVolumeClaim",
+    "metadata": {
+      "name": "storage-data",
+      "namespace": "knect-e2e",
+      "uid": "uid-pvc-storage-data",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "accessModes": ["ReadWriteOnce"],
+      "resources": { "requests": { "storage": "5Gi" } },
+      "storageClassName": "rook-ceph-block",
+      "volumeName": "pvc-storage-data"
+    },
+    "status": {
+      "accessModes": ["ReadWriteOnce"],
+      "capacity": { "storage": "5Gi" },
+      "phase": "Bound"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "PersistentVolumeClaim",
+    "metadata": {
+      "name": "shared-assets",
+      "namespace": "knect-e2e",
+      "uid": "uid-pvc-shared-assets",
+      "creationTimestamp": "2026-10-31T21:33:01Z"
+    },
+    "spec": {
+      "accessModes": ["ReadWriteMany"],
+      "resources": { "requests": { "storage": "10Gi" } },
+      "storageClassName": "rook-cephfs",
+      "volumeName": "pvc-shared-assets"
+    },
+    "status": {
+      "accessModes": ["ReadWriteMany"],
+      "capacity": { "storage": "10Gi" },
+      "phase": "Bound"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "PersistentVolumeClaim",
+    "metadata": {
+      "name": "single-data",
+      "namespace": "knect-e2e",
+      "uid": "uid-pvc-single-data",
+      "creationTimestamp": "2026-10-31T21:33:02Z"
+    },
+    "spec": {
+      "accessModes": ["ReadWriteOnce"],
+      "resources": { "requests": { "storage": "2Gi" } },
+      "storageClassName": "rook-ceph-block",
+      "volumeName": "pvc-single-data"
+    },
+    "status": {
+      "accessModes": ["ReadWriteOnce"],
+      "capacity": { "storage": "2Gi" },
+      "phase": "Bound"
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "storage-consumer",
+      "namespace": "knect-e2e",
+      "uid": "uid-kservice-storage-consumer",
+      "creationTimestamp": "2026-10-31T21:33:10Z",
+      "labels": { "app.kubernetes.io/name": "storage-consumer" }
+    },
+    "spec": {
+      "template": {
+        "metadata": {
+          "annotations": {
+            "autoscaling.knative.dev/maxScale": "5",
+            "autoscaling.knative.dev/minScale": "1"
+          }
+        },
+        "spec": {
+          "containers": [
+            {
+              "name": "storage-consumer",
+              "image": "nginxinc/nginx-unprivileged:1.27.4",
+              "volumeMounts": [
+                { "name": "static-data", "mountPath": "/usr/share/nginx/html/data" }
+              ]
+            }
+          ],
+          "volumes": [
+            {
+              "name": "static-data",
+              "persistentVolumeClaim": { "claimName": "storage-data" }
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "url": "http://storage-consumer.knect-e2e.sslip.io",
+      "latestReadyRevisionName": "storage-consumer-00001",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "storage-reader",
+      "namespace": "knect-e2e",
+      "uid": "uid-kservice-storage-reader",
+      "creationTimestamp": "2026-10-31T21:33:11Z",
+      "labels": { "app.kubernetes.io/name": "storage-reader" }
+    },
+    "spec": {
+      "template": {
+        "metadata": { "annotations": {} },
+        "spec": {
+          "containers": [
+            {
+              "name": "storage-reader",
+              "image": "nginxinc/nginx-unprivileged:1.27.4",
+              "volumeMounts": [
+                { "name": "shared", "mountPath": "/usr/share/nginx/html/shared" }
+              ]
+            }
+          ],
+          "volumes": [
+            {
+              "name": "shared",
+              "persistentVolumeClaim": { "claimName": "shared-assets" }
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "url": "http://storage-reader.knect-e2e.sslip.io",
+      "latestReadyRevisionName": "storage-reader-00001",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:24Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "storage-single",
+      "namespace": "knect-e2e",
+      "uid": "uid-kservice-storage-single",
+      "creationTimestamp": "2026-10-31T21:33:12Z",
+      "labels": { "app.kubernetes.io/name": "storage-single" }
+    },
+    "spec": {
+      "template": {
+        "metadata": {
+          "annotations": { "autoscaling.knative.dev/maxScale": "1" }
+        },
+        "spec": {
+          "containers": [
+            {
+              "name": "storage-single",
+              "image": "nginxinc/nginx-unprivileged:1.27.4",
+              "volumeMounts": [
+                { "name": "single", "mountPath": "/usr/share/nginx/html/single" }
+              ]
+            }
+          ],
+          "volumes": [
+            {
+              "name": "single",
+              "persistentVolumeClaim": { "claimName": "single-data" }
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "url": "http://storage-single.knect-e2e.sslip.io",
+      "latestReadyRevisionName": "storage-single-00001",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:25Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Revision",
+    "metadata": {
+      "name": "storage-consumer-00001",
+      "namespace": "knect-e2e",
+      "uid": "uid-rev-storage-consumer",
+      "creationTimestamp": "2026-10-31T21:33:10Z",
+      "labels": {
+        "serving.knative.dev/configuration": "storage-consumer",
+        "serving.knative.dev/service": "storage-consumer"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "storage-consumer",
+          "image": "nginxinc/nginx-unprivileged:1.27.4",
+          "volumeMounts": [
+            { "name": "static-data", "mountPath": "/usr/share/nginx/html/data" }
+          ]
+        }
+      ],
+      "volumes": [
+        {
+          "name": "static-data",
+          "persistentVolumeClaim": { "claimName": "storage-data" }
+        }
+      ]
+    },
+    "status": {
+      "actualReplicas": 1,
+      "desiredReplicas": 1,
+      "conditions": [
+        { "type": "Ready", "status": "True" },
+        { "type": "Active", "status": "True" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Revision",
+    "metadata": {
+      "name": "storage-reader-00001",
+      "namespace": "knect-e2e",
+      "uid": "uid-rev-storage-reader",
+      "creationTimestamp": "2026-10-31T21:33:11Z",
+      "labels": {
+        "serving.knative.dev/configuration": "storage-reader",
+        "serving.knative.dev/service": "storage-reader"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "storage-reader",
+          "image": "nginxinc/nginx-unprivileged:1.27.4",
+          "volumeMounts": [
+            { "name": "shared", "mountPath": "/usr/share/nginx/html/shared" }
+          ]
+        }
+      ],
+      "volumes": [
+        {
+          "name": "shared",
+          "persistentVolumeClaim": { "claimName": "shared-assets" }
+        }
+      ]
+    },
+    "status": {
+      "actualReplicas": 1,
+      "desiredReplicas": 1,
+      "conditions": [
+        { "type": "Ready", "status": "True" },
+        { "type": "Active", "status": "True" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Revision",
+    "metadata": {
+      "name": "storage-single-00001",
+      "namespace": "knect-e2e",
+      "uid": "uid-rev-storage-single",
+      "creationTimestamp": "2026-10-31T21:33:12Z",
+      "labels": {
+        "serving.knative.dev/configuration": "storage-single",
+        "serving.knative.dev/service": "storage-single"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "storage-single",
+          "image": "nginxinc/nginx-unprivileged:1.27.4",
+          "volumeMounts": [
+            { "name": "single", "mountPath": "/usr/share/nginx/html/single" }
+          ]
+        }
+      ],
+      "volumes": [
+        {
+          "name": "single",
+          "persistentVolumeClaim": { "claimName": "single-data" }
+        }
+      ]
+    },
+    "status": {
+      "actualReplicas": 1,
+      "desiredReplicas": 1,
+      "conditions": [
+        { "type": "Ready", "status": "True" },
+        { "type": "Active", "status": "True" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "name": "storage-consumer-00001-deployment",
+      "namespace": "knect-e2e",
+      "uid": "uid-deploy-storage-consumer",
+      "creationTimestamp": "2026-10-31T21:33:10Z",
+      "ownerReferences": [
+        {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Revision",
+          "name": "storage-consumer-00001",
+          "uid": "uid-rev-storage-consumer",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {
+      "replicas": 1,
+      "selector": { "matchLabels": { "app": "storage-consumer" } },
+      "template": {
+        "metadata": { "labels": { "app": "storage-consumer" } },
+        "spec": {
+          "containers": [
+            {
+              "name": "storage-consumer",
+              "image": "nginxinc/nginx-unprivileged:1.27.4",
+              "volumeMounts": [
+                { "name": "static-data", "mountPath": "/usr/share/nginx/html/data" }
+              ]
+            }
+          ],
+          "volumes": [
+            {
+              "name": "static-data",
+              "persistentVolumeClaim": { "claimName": "storage-data" }
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "readyReplicas": 1,
+      "conditions": [{ "type": "Available", "status": "True" }]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "storage-consumer-00001-abc",
+      "namespace": "knect-e2e",
+      "uid": "uid-pod-storage-consumer",
+      "creationTimestamp": "2026-10-31T21:33:10Z",
+      "labels": {
+        "app": "storage-consumer",
+        "serving.knative.dev/revisionUID": "uid-rev-storage-consumer"
+      },
+      "ownerReferences": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "storage-consumer-00001-deployment",
+          "uid": "uid-deploy-storage-consumer",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "storage-consumer",
+          "image": "nginxinc/nginx-unprivileged:1.27.4",
+          "volumeMounts": [
+            { "name": "static-data", "mountPath": "/usr/share/nginx/html/data" }
+          ]
+        }
+      ],
+      "volumes": [
+        {
+          "name": "static-data",
+          "persistentVolumeClaim": { "claimName": "storage-data" }
+        }
+      ]
+    },
+    "status": {
+      "phase": "Running",
+      "conditions": [{ "type": "Ready", "status": "True" }]
+    }
+  }
+]

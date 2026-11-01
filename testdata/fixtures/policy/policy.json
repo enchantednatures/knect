@@ -1,0 +1,858 @@
+[
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "order-processor",
+      "namespace": "knect-e2e",
+      "uid": "uid-kservice-order",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "labels": {
+        "app": "order-processor",
+        "app.kubernetes.io/name": "order-processor"
+      }
+    },
+    "spec": {},
+    "status": {
+      "url": "http://order-processor.knect-e2e.sslip.io",
+      "latestReadyRevisionName": "order-processor-00002",
+      "conditions": [
+        { "type": "Ready", "status": "True", "lastTransitionTime": "2026-10-31T21:34:23Z" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Route",
+    "metadata": {
+      "name": "order-processor",
+      "namespace": "knect-e2e",
+      "uid": "uid-route-order",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "ownerReferences": [
+        {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Service",
+          "name": "order-processor",
+          "uid": "uid-kservice-order",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {
+      "traffic": [
+        { "latestRevision": false, "percent": 90, "revisionName": "order-processor-00001", "tag": "stable" },
+        { "latestRevision": false, "percent": 10, "revisionName": "order-processor-00002", "tag": "canary" }
+      ]
+    },
+    "status": {
+      "url": "http://order-processor.knect-e2e.sslip.io",
+      "conditions": [
+        { "type": "Ready", "status": "True", "lastTransitionTime": "2026-10-31T21:34:23Z" }
+      ],
+      "traffic": [
+        { "latestRevision": false, "percent": 90, "revisionName": "order-processor-00001", "tag": "stable", "url": "http://stable-order-processor.knect-e2e.sslip.io" },
+        { "latestRevision": false, "percent": 10, "revisionName": "order-processor-00002", "tag": "canary", "url": "http://canary-order-processor.knect-e2e.sslip.io" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Configuration",
+    "metadata": {
+      "name": "order-processor",
+      "namespace": "knect-e2e",
+      "uid": "uid-config-order",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "ownerReferences": [
+        {
+          "apiVersion": "serving.knative.dev/v1",
+          "kind": "Service",
+          "name": "order-processor",
+          "uid": "uid-kservice-order",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {},
+    "status": {
+      "latestCreatedRevisionName": "order-processor-00002",
+      "conditions": [
+        { "type": "Ready", "status": "True", "lastTransitionTime": "2026-10-31T21:34:23Z" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Revision",
+    "metadata": {
+      "name": "order-processor-00001",
+      "namespace": "knect-e2e",
+      "uid": "uid-rev-order-00001",
+      "creationTimestamp": "2026-10-31T21:33:10Z",
+      "labels": {
+        "serving.knative.dev/configuration": "order-processor",
+        "serving.knative.dev/configurationGeneration": "1",
+        "serving.knative.dev/service": "order-processor"
+      }
+    },
+    "spec": {},
+    "status": {
+      "actualReplicas": 1,
+      "desiredReplicas": 1,
+      "conditions": [
+        { "type": "Active", "status": "True", "lastTransitionTime": "2026-10-31T21:34:20Z" },
+        { "type": "Ready", "status": "True", "lastTransitionTime": "2026-10-31T21:34:20Z" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "serving.knative.dev/v1",
+    "kind": "Revision",
+    "metadata": {
+      "name": "order-processor-00002",
+      "namespace": "knect-e2e",
+      "uid": "uid-rev-order-00002",
+      "creationTimestamp": "2026-10-31T21:33:20Z",
+      "labels": {
+        "serving.knative.dev/configuration": "order-processor",
+        "serving.knative.dev/configurationGeneration": "2",
+        "serving.knative.dev/service": "order-processor"
+      }
+    },
+    "spec": {},
+    "status": {
+      "actualReplicas": 0,
+      "desiredReplicas": 0,
+      "conditions": [
+        { "type": "Active", "status": "False", "lastTransitionTime": "2026-10-31T21:34:21Z" },
+        { "type": "Ready", "status": "True", "lastTransitionTime": "2026-10-31T21:34:21Z" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "name": "order-processor-00002-deployment",
+      "namespace": "knect-e2e",
+      "uid": "uid-deploy-order-00002",
+      "creationTimestamp": "2026-10-31T21:33:20Z",
+      "labels": {
+        "serving.knative.dev/service": "order-processor",
+        "serving.knative.dev/revision": "order-processor-00002"
+      }
+    },
+    "spec": {
+      "replicas": 1,
+      "selector": { "matchLabels": { "app": "order-processor", "revision": "order-processor-00002" } }
+    },
+    "status": {
+      "readyReplicas": 1,
+      "conditions": [
+        { "type": "Available", "status": "True", "lastTransitionTime": "2026-10-31T21:34:20Z" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "ReplicaSet",
+    "metadata": {
+      "name": "order-processor-replicaset",
+      "namespace": "knect-e2e",
+      "uid": "uid-rs-order",
+      "creationTimestamp": "2026-10-31T21:33:20Z",
+      "ownerReferences": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "order-processor-00002-deployment",
+          "uid": "uid-deploy-order-00002",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {},
+    "status": {}
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "order-processor-pod-xyz",
+      "namespace": "knect-e2e",
+      "uid": "uid-pod-order-00002",
+      "creationTimestamp": "2026-10-31T21:33:25Z",
+      "ownerReferences": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "ReplicaSet",
+          "name": "order-processor-replicaset",
+          "uid": "uid-rs-order",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {},
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        { "type": "Ready", "status": "True", "lastTransitionTime": "2026-10-31T21:34:20Z" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "name": "checkout-canary",
+      "namespace": "knect-e2e",
+      "uid": "uid-deploy-checkout",
+      "creationTimestamp": "2026-10-31T21:33:28Z",
+      "labels": { "app": "checkout-canary" }
+    },
+    "spec": { "replicas": 1, "selector": { "matchLabels": { "app": "checkout-canary" } } },
+    "status": {
+      "readyReplicas": 1,
+      "conditions": [
+        { "type": "Available", "status": "True", "lastTransitionTime": "2026-10-31T21:34:20Z" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "networking.istio.io/v1",
+    "kind": "VirtualService",
+    "metadata": {
+      "name": "order-processor-ingress",
+      "namespace": "knect-e2e",
+      "uid": "uid-vs-ingress",
+      "creationTimestamp": "2026-10-31T21:33:30Z",
+      "labels": {
+        "networking.internal.knative.dev/ingress": "order-processor",
+        "serving.knative.dev/route": "order-processor",
+        "serving.knative.dev/routeNamespace": "knect-e2e"
+      },
+      "ownerReferences": [
+        {
+          "apiVersion": "networking.internal.knative.dev/v1alpha1",
+          "kind": "Ingress",
+          "name": "order-processor",
+          "uid": "uid-ingress-order",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {
+      "hosts": [
+        "order-processor.knect-e2e",
+        "order-processor.knect-e2e.sslip.io",
+        "order-processor.knect-e2e.svc.cluster.local"
+      ],
+      "http": [
+        {
+          "match": [{ "authority": { "prefix": "order-processor.knect-e2e" } }],
+          "route": [
+            {
+              "destination": {
+                "host": "order-processor-00001.knect-e2e.svc.cluster.local",
+                "port": { "number": 80 }
+              },
+              "weight": 90
+            },
+            {
+              "destination": {
+                "host": "order-processor-00002.knect-e2e.svc.cluster.local",
+                "port": { "number": 80 }
+              },
+              "weight": 10
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "networking.istio.io/v1",
+    "kind": "VirtualService",
+    "metadata": {
+      "name": "order-processor-custom",
+      "namespace": "knect-e2e",
+      "uid": "uid-vs-custom",
+      "creationTimestamp": "2026-10-31T21:33:31Z",
+      "labels": {
+        "app.kubernetes.io/part-of": "knect",
+        "knect.dev/scenario": "policy-istio"
+      }
+    },
+    "spec": {
+      "hosts": ["order-processor.knect-e2e.sslip.io"],
+      "http": [
+        {
+          "name": "custom",
+          "route": [
+            {
+              "destination": {
+                "host": "order-processor.knect-e2e.svc.cluster.local",
+                "port": { "number": 80 }
+              },
+              "weight": 100
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "networking.istio.io/v1",
+    "kind": "VirtualService",
+    "metadata": {
+      "name": "order-processor-external",
+      "namespace": "knect-e2e",
+      "uid": "uid-vs-external",
+      "creationTimestamp": "2026-10-31T21:33:32Z"
+    },
+    "spec": {
+      "hosts": ["orders.example.com"],
+      "http": [
+        {
+          "route": [
+            {
+              "destination": {
+                "host": "order-processor.knect-e2e.svc.cluster.local",
+                "port": { "number": 80 }
+              },
+              "weight": 100
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "networking.istio.io/v1",
+    "kind": "VirtualService",
+    "metadata": {
+      "name": "order-processor-flagger",
+      "namespace": "knect-e2e",
+      "uid": "uid-vs-flagger",
+      "creationTimestamp": "2026-10-31T21:33:26Z",
+      "ownerReferences": [
+        {
+          "apiVersion": "flagger.app/v1beta1",
+          "kind": "Canary",
+          "name": "order-processor-flagger",
+          "uid": "uid-canary-order",
+          "controller": true
+        }
+      ]
+    },
+    "spec": {
+      "hosts": [
+        "order-processor-flagger.knect-e2e.example.com",
+        "order-processor-flagger"
+      ],
+      "http": [
+        {
+          "route": [
+            { "destination": { "host": "order-processor-flagger-primary" }, "weight": 100 },
+            { "destination": { "host": "order-processor-flagger-canary" }, "weight": 0 }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "networking.istio.io/v1",
+    "kind": "DestinationRule",
+    "metadata": {
+      "name": "order-processor",
+      "namespace": "knect-e2e",
+      "uid": "uid-dr-order",
+      "creationTimestamp": "2026-10-31T21:33:30Z"
+    },
+    "spec": {
+      "host": "order-processor.knect-e2e.svc.cluster.local",
+      "subsets": [
+        { "name": "stable", "labels": { "version": "stable" } },
+        { "name": "canary", "labels": { "version": "canary" } }
+      ],
+      "trafficPolicy": {
+        "connectionPool": { "http": { "http1MaxPendingRequests": 100, "http2MaxRequests": 100 } },
+        "tls": { "mode": "ISTIO_MUTUAL" }
+      }
+    }
+  },
+  {
+    "apiVersion": "networking.istio.io/v1",
+    "kind": "DestinationRule",
+    "metadata": {
+      "name": "order-processor-flagger-primary",
+      "namespace": "knect-e2e",
+      "uid": "uid-dr-flagger-primary",
+      "creationTimestamp": "2026-10-31T21:33:26Z",
+      "ownerReferences": [
+        {
+          "apiVersion": "flagger.app/v1beta1",
+          "kind": "Canary",
+          "name": "order-processor-flagger",
+          "uid": "uid-canary-order",
+          "controller": true
+        }
+      ]
+    },
+    "spec": { "host": "order-processor-flagger-primary" }
+  },
+  {
+    "apiVersion": "networking.istio.io/v1",
+    "kind": "DestinationRule",
+    "metadata": {
+      "name": "order-processor-flagger-canary",
+      "namespace": "knect-e2e",
+      "uid": "uid-dr-flagger-canary",
+      "creationTimestamp": "2026-10-31T21:33:26Z",
+      "ownerReferences": [
+        {
+          "apiVersion": "flagger.app/v1beta1",
+          "kind": "Canary",
+          "name": "order-processor-flagger",
+          "uid": "uid-canary-order",
+          "controller": true
+        }
+      ]
+    },
+    "spec": { "host": "order-processor-flagger-canary" }
+  },
+  {
+    "apiVersion": "security.istio.io/v1",
+    "kind": "PeerAuthentication",
+    "metadata": {
+      "name": "order-processor-strict",
+      "namespace": "knect-e2e",
+      "uid": "uid-pa-strict",
+      "creationTimestamp": "2026-10-31T21:33:33Z"
+    },
+    "spec": {
+      "selector": { "matchLabels": { "app": "order-processor" } },
+      "mtls": { "mode": "STRICT" }
+    }
+  },
+  {
+    "apiVersion": "security.istio.io/v1",
+    "kind": "PeerAuthentication",
+    "metadata": {
+      "name": "knect-e2e-permissive",
+      "namespace": "knect-e2e",
+      "uid": "uid-pa-permissive",
+      "creationTimestamp": "2026-10-31T21:33:33Z"
+    },
+    "spec": { "mtls": { "mode": "PERMISSIVE" } }
+  },
+  {
+    "apiVersion": "security.istio.io/v1",
+    "kind": "AuthorizationPolicy",
+    "metadata": {
+      "name": "allow-order-processor",
+      "namespace": "knect-e2e",
+      "uid": "uid-ap-allow",
+      "creationTimestamp": "2026-10-31T21:33:34Z"
+    },
+    "spec": {
+      "action": "ALLOW",
+      "selector": { "matchLabels": { "app": "order-processor" } },
+      "rules": [
+        {
+          "from": [{ "source": { "namespaces": ["knect-e2e", "istio-system"] } }],
+          "to": [{ "operation": { "methods": ["GET", "POST"] } }]
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "flagger.app/v1beta1",
+    "kind": "Canary",
+    "metadata": {
+      "name": "order-processor-flagger",
+      "namespace": "knect-e2e",
+      "uid": "uid-canary-order",
+      "creationTimestamp": "2026-10-31T21:33:26Z",
+      "labels": {
+        "app.kubernetes.io/part-of": "knect",
+        "knect.dev/scenario": "policy-flagger"
+      }
+    },
+    "spec": {
+      "analysis": {
+        "interval": "10s",
+        "maxWeight": 50,
+        "stepWeight": 10,
+        "threshold": 2,
+        "metrics": [
+          {
+            "name": "request-success-rate",
+            "interval": "10s",
+            "templateRef": { "name": "knect-request-success-rate", "namespace": "knect-e2e" },
+            "thresholdRange": { "min": 99 }
+          }
+        ]
+      },
+      "service": {
+        "gateways": ["mesh"],
+        "hosts": ["order-processor-flagger.knect-e2e.example.com"],
+        "port": 80,
+        "targetPort": 8080
+      },
+      "targetRef": {
+        "apiVersion": "serving.knative.dev/v1",
+        "kind": "Service",
+        "name": "order-processor"
+      }
+    },
+    "status": {
+      "phase": "Progressing",
+      "canaryWeight": 25,
+      "iterations": 3,
+      "failedChecks": 0,
+      "conditions": [
+        {
+          "type": "Promoting",
+          "status": "True",
+          "reason": "NewRevisionDetected",
+          "message": "waiting for canary analysis",
+          "lastTransitionTime": "2026-10-31T21:34:25Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "flagger.app/v1beta1",
+    "kind": "Canary",
+    "metadata": {
+      "name": "checkout-canary",
+      "namespace": "knect-e2e",
+      "uid": "uid-canary-checkout",
+      "creationTimestamp": "2026-10-31T21:33:28Z",
+      "labels": {
+        "app.kubernetes.io/part-of": "knect",
+        "knect.dev/scenario": "actions-canary"
+      }
+    },
+    "spec": {
+      "analysis": { "interval": "10s", "maxWeight": 50, "stepWeight": 25, "threshold": 1 },
+      "service": {
+        "gateways": ["mesh"],
+        "hosts": ["checkout-canary.knect-e2e.example.com"],
+        "port": 80,
+        "targetPort": 8080
+      },
+      "targetRef": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "name": "checkout-canary"
+      }
+    },
+    "status": {
+      "phase": "Failed",
+      "canaryWeight": 50,
+      "iterations": 7,
+      "failedChecks": 2,
+      "conditions": [
+        {
+          "type": "Promoted",
+          "status": "False",
+          "reason": "FailedChecks",
+          "message": "metric check failed",
+          "lastTransitionTime": "2026-10-31T21:34:26Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "flagger.app/v1beta1",
+    "kind": "MetricTemplate",
+    "metadata": {
+      "name": "knect-request-success-rate",
+      "namespace": "knect-e2e",
+      "uid": "uid-metric-success",
+      "creationTimestamp": "2026-10-31T21:33:26Z"
+    },
+    "spec": {
+      "provider": {
+        "address": "http://prometheus.monitoring.svc.cluster.local:9090",
+        "type": "prometheus"
+      },
+      "query": "100 - (sum(rate(istio_requests_total{reporter=\"destination\"}[{{ interval }}])) or vector(0))"
+    }
+  },
+  {
+    "apiVersion": "kyverno.io/v1",
+    "kind": "ClusterPolicy",
+    "metadata": {
+      "name": "knect-e2e-require-labels",
+      "uid": "uid-cp-require",
+      "creationTimestamp": "2026-10-31T21:33:28Z"
+    },
+    "spec": {
+      "background": true,
+      "validationFailureAction": "Audit",
+      "rules": [
+        {
+          "name": "require-part-of-label",
+          "match": {
+            "any": [{ "resources": { "kinds": ["Service", "Revision", "Pod"], "namespaces": ["knect-e2e"] } }]
+          },
+          "validate": {
+            "message": "resources in knect-e2e must have app.kubernetes.io/part-of.",
+            "pattern": { "metadata": { "labels": { "app.kubernetes.io/part-of": "?*" } } }
+          }
+        }
+      ]
+    },
+    "status": {
+      "conditions": [
+        { "type": "Ready", "status": "True", "lastTransitionTime": "2026-10-31T21:33:29Z" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "kyverno.io/v1",
+    "kind": "ClusterPolicy",
+    "metadata": {
+      "name": "knect-e2e-mutate-labels",
+      "uid": "uid-cp-mutate",
+      "creationTimestamp": "2026-10-31T21:33:28Z"
+    },
+    "spec": {
+      "background": true,
+      "rules": [
+        {
+          "name": "add-knect-labels",
+          "match": {
+            "any": [{ "resources": { "kinds": ["Service", "Revision"], "namespaces": ["knect-e2e"] } }]
+          },
+          "mutate": {
+            "patchStrategicMerge": {
+              "metadata": { "labels": { "app.kubernetes.io/part-of": "knect" } }
+            }
+          }
+        }
+      ]
+    },
+    "status": {
+      "conditions": [
+        { "type": "Ready", "status": "True", "lastTransitionTime": "2026-10-31T21:33:29Z" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "kyverno.io/v1",
+    "kind": "Policy",
+    "metadata": {
+      "name": "team-guard",
+      "namespace": "knect-e2e",
+      "uid": "uid-policy-team",
+      "creationTimestamp": "2026-10-31T21:33:28Z"
+    },
+    "spec": {
+      "background": true,
+      "validationFailureAction": "Audit",
+      "rules": [
+        {
+          "name": "require-team",
+          "match": {
+            "any": [{ "resources": { "kinds": ["Service", "Revision"], "namespaces": ["knect-e2e"] } }]
+          },
+          "validate": {
+            "message": "resources must declare a team label.",
+            "pattern": { "metadata": { "labels": { "team": "?*" } } }
+          }
+        }
+      ]
+    },
+    "status": {
+      "conditions": [
+        { "type": "Ready", "status": "True", "lastTransitionTime": "2026-10-31T21:33:29Z" }
+      ]
+    }
+  },
+  {
+    "apiVersion": "wgpolicyk8s.io/v1alpha2",
+    "kind": "PolicyReport",
+    "metadata": {
+      "name": "order-processor-revision-report",
+      "namespace": "knect-e2e",
+      "uid": "uid-report-revision",
+      "creationTimestamp": "2026-10-31T21:33:43Z",
+      "labels": { "app.kubernetes.io/managed-by": "kyverno" }
+    },
+    "scope": {
+      "apiVersion": "serving.knative.dev/v1",
+      "kind": "Revision",
+      "name": "order-processor-00002",
+      "namespace": "knect-e2e",
+      "uid": "uid-rev-order-00002"
+    },
+    "results": [
+      {
+        "policy": "knect-e2e-require-labels",
+        "rule": "require-part-of-label",
+        "result": "fail",
+        "message": "validation rule 'require-part-of-label' failed: missing label app.kubernetes.io/part-of; password=hunter2-sentinel",
+        "severity": "high",
+        "source": "kyverno",
+        "scored": true,
+        "timestamp": { "seconds": 1793482494, "nanos": 0 }
+      },
+      {
+        "policy": "knect-e2e-mutate-labels",
+        "rule": "add-knect-labels",
+        "result": "skip",
+        "message": "no patches applied",
+        "source": "kyverno",
+        "scored": true
+      },
+      {
+        "policy": "knect-e2e/team-guard",
+        "rule": "require-team",
+        "result": "warn",
+        "message": "team label missing",
+        "source": "kyverno",
+        "scored": true
+      }
+    ],
+    "summary": { "error": 0, "fail": 1, "pass": 0, "skip": 1, "warn": 1 }
+  },
+  {
+    "apiVersion": "wgpolicyk8s.io/v1alpha2",
+    "kind": "PolicyReport",
+    "metadata": {
+      "name": "order-processor-pod-report",
+      "namespace": "knect-e2e",
+      "uid": "uid-report-pod",
+      "creationTimestamp": "2026-10-31T21:33:44Z",
+      "labels": { "app.kubernetes.io/managed-by": "kyverno" }
+    },
+    "scope": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "name": "order-processor-pod-xyz",
+      "namespace": "knect-e2e",
+      "uid": "uid-pod-order-00002"
+    },
+    "results": [
+      {
+        "policy": "knect-e2e-require-labels",
+        "rule": "require-part-of-label",
+        "result": "pass",
+        "message": "validation rule 'require-part-of-label' passed.",
+        "source": "kyverno",
+        "scored": true
+      }
+    ],
+    "summary": { "error": 0, "fail": 0, "pass": 1, "skip": 0, "warn": 0 }
+  },
+  {
+    "apiVersion": "wgpolicyk8s.io/v1alpha2",
+    "kind": "ClusterPolicyReport",
+    "metadata": {
+      "name": "knect-e2e-cluster-policy-report",
+      "uid": "uid-report-cluster",
+      "creationTimestamp": "2026-10-31T21:33:28Z",
+      "labels": {
+        "app.kubernetes.io/part-of": "knect",
+        "knect.dev/scenario": "policy-report"
+      }
+    },
+    "scope": {
+      "apiVersion": "serving.knative.dev/v1",
+      "kind": "Service",
+      "name": "order-processor",
+      "namespace": "knect-e2e",
+      "uid": "uid-kservice-order"
+    },
+    "results": [
+      {
+        "policy": "knect-e2e/team-guard",
+        "rule": "require-team",
+        "result": "pass",
+        "message": "team label present",
+        "source": "kyverno",
+        "scored": true
+      }
+    ],
+    "summary": { "error": 0, "fail": 0, "pass": 1, "skip": 0, "warn": 0 }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Event",
+    "metadata": {
+      "name": "order-processor.1",
+      "namespace": "knect-e2e",
+      "uid": "uid-event-violation",
+      "creationTimestamp": "2026-10-31T21:35:00Z",
+      "annotations": {
+        "kyverno.io/policy": "knect-e2e-require-labels",
+        "kyverno.io/rule": "require-part-of-label",
+        "kyverno.io/result": "fail",
+        "kyverno.io/severity": "high"
+      }
+    },
+    "involvedObject": {
+      "apiVersion": "serving.knative.dev/v1",
+      "kind": "Revision",
+      "name": "order-processor-00002",
+      "namespace": "knect-e2e",
+      "uid": "uid-rev-order-00002"
+    },
+    "reason": "PolicyViolation",
+    "message": "policy knect-e2e-require-labels validation error: missing label app.kubernetes.io/part-of; token=event-sentinel",
+    "type": "Warning",
+    "source": { "component": "kyverno" },
+    "reportingComponent": "kyverno",
+    "count": 3,
+    "lastTimestamp": "2026-10-31T21:35:00Z"
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Event",
+    "metadata": {
+      "name": "order-processor.2",
+      "namespace": "knect-e2e",
+      "uid": "uid-event-applied",
+      "creationTimestamp": "2026-10-31T21:35:01Z",
+      "annotations": {
+        "kyverno.io/policy": "knect-e2e-mutate-labels",
+        "kyverno.io/rule": "add-knect-labels",
+        "kyverno.io/result": "pass",
+        "kyverno.io/severity": "info"
+      }
+    },
+    "involvedObject": {
+      "apiVersion": "serving.knative.dev/v1",
+      "kind": "Revision",
+      "name": "order-processor-00002",
+      "namespace": "knect-e2e",
+      "uid": "uid-rev-order-00002"
+    },
+    "reason": "PolicyApplied",
+    "message": "applied mutation policy knect-e2e-mutate-labels",
+    "type": "Normal",
+    "source": { "component": "kyverno" },
+    "reportingComponent": "kyverno",
+    "count": 1,
+    "lastTimestamp": "2026-10-31T21:35:01Z"
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Secret",
+    "metadata": {
+      "name": "noise-secret",
+      "namespace": "knect-e2e",
+      "uid": "uid-secret-noise",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "data": {
+      "password": "c2VjcmV0ZGF0YS1zZW50aW5lbA=="
+    },
+    "type": "Opaque"
+  }
+]

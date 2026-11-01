@@ -1,0 +1,228 @@
+{
+  "apiVersion": "serving.knative.dev/v1",
+  "kind": "Service",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"serving.knative.dev/v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/name\":\"order-processor\",\"app.kubernetes.io/part-of\":\"knect\",\"knect.dev/scenario\":\"serving\"},\"name\":\"order-processor\",\"namespace\":\"knect-e2e\"},\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"autoscaling.knative.dev/maxScale\":\"3\",\"autoscaling.knative.dev/minScale\":\"1\",\"autoscaling.knative.dev/target\":\"20\"}},\"spec\":{\"containerConcurrency\":10,\"containers\":[{\"env\":[{\"name\":\"REDIS_URL\",\"valueFrom\":{\"secretKeyRef\":{\"key\":\"REDIS_URL\",\"name\":\"redis-credentials\"}}},{\"name\":\"KNECT_ENVIRONMENT\",\"value\":\"e2e\"}],\"image\":\"nginxinc/nginx-unprivileged:1.27.4\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"order-processor\",\"ports\":[{\"containerPort\":8080,\"name\":\"http1\"}],\"resources\":{\"limits\":{\"cpu\":\"500m\",\"memory\":\"256Mi\"},\"requests\":{\"cpu\":\"50m\",\"memory\":\"64Mi\"}}}],\"timeoutSeconds\":30}},\"traffic\":[{\"percent\":90,\"revisionName\":\"order-processor-00001\",\"tag\":\"stable\"},{\"percent\":10,\"revisionName\":\"order-processor-00002\",\"tag\":\"canary\"}]}}\n",
+      "serving.knative.dev/creator": "kubernetes-admin",
+      "serving.knative.dev/lastModifier": "kubernetes-admin"
+    },
+    "creationTimestamp": "2026-10-31T21:33:22Z",
+    "generation": 2,
+    "labels": {
+      "app.kubernetes.io/name": "order-processor",
+      "app.kubernetes.io/part-of": "knect",
+      "knect.dev/environment": "e2e",
+      "knect.dev/managed": "true",
+      "knect.dev/scenario": "serving"
+    },
+    "managedFields": [
+      {
+        "apiVersion": "serving.knative.dev/v1",
+        "fieldsType": "FieldsV1",
+        "fieldsV1": {
+          "f:metadata": {
+            "f:annotations": {
+              ".": {},
+              "f:kubectl.kubernetes.io/last-applied-configuration": {}
+            },
+            "f:labels": {
+              ".": {},
+              "f:app.kubernetes.io/name": {},
+              "f:app.kubernetes.io/part-of": {},
+              "f:knect.dev/scenario": {}
+            }
+          },
+          "f:spec": {
+            ".": {},
+            "f:template": {
+              ".": {},
+              "f:metadata": {
+                ".": {},
+                "f:annotations": {
+                  ".": {},
+                  "f:autoscaling.knative.dev/maxScale": {},
+                  "f:autoscaling.knative.dev/minScale": {},
+                  "f:autoscaling.knative.dev/target": {}
+                }
+              },
+              "f:spec": {
+                ".": {},
+                "f:containerConcurrency": {},
+                "f:containers": {},
+                "f:timeoutSeconds": {}
+              }
+            },
+            "f:traffic": {}
+          }
+        },
+        "manager": "kubectl-client-side-apply",
+        "operation": "Update",
+        "time": "2026-10-31T21:33:22Z"
+      },
+      {
+        "apiVersion": "serving.knative.dev/v1",
+        "fieldsType": "FieldsV1",
+        "fieldsV1": {
+          "f:spec": {
+            "f:template": {
+              "f:metadata": {
+                "f:annotations": {
+                  "f:knect.dev/primed-revision": {}
+                }
+              }
+            }
+          }
+        },
+        "manager": "kubectl-patch",
+        "operation": "Update",
+        "time": "2026-10-31T21:33:29Z"
+      },
+      {
+        "apiVersion": "serving.knative.dev/v1",
+        "fieldsType": "FieldsV1",
+        "fieldsV1": {
+          "f:status": {
+            ".": {},
+            "f:address": {
+              ".": {},
+              "f:url": {}
+            },
+            "f:conditions": {},
+            "f:latestCreatedRevisionName": {},
+            "f:latestReadyRevisionName": {},
+            "f:observedGeneration": {},
+            "f:traffic": {},
+            "f:url": {}
+          }
+        },
+        "manager": "controller",
+        "operation": "Update",
+        "subresource": "status",
+        "time": "2026-10-31T21:34:23Z"
+      }
+    ],
+    "name": "order-processor",
+    "namespace": "knect-e2e",
+    "resourceVersion": "1",
+    "uid": "uid-kservice-order-processor"
+  },
+  "spec": {
+    "template": {
+      "metadata": {
+        "annotations": {
+          "autoscaling.knative.dev/maxScale": "3",
+          "autoscaling.knative.dev/minScale": "1",
+          "autoscaling.knative.dev/target": "20",
+          "knect.dev/primed-revision": "2"
+        }
+      },
+      "spec": {
+        "containerConcurrency": 10,
+        "containers": [
+          {
+            "env": [
+              {
+                "name": "REDIS_URL",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "key": "REDIS_URL",
+                    "name": "redis-credentials"
+                  }
+                }
+              },
+              {
+                "name": "KNECT_ENVIRONMENT",
+                "value": "e2e"
+              }
+            ],
+            "image": "nginxinc/nginx-unprivileged:1.27.4",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "order-processor",
+            "ports": [
+              {
+                "containerPort": 8080,
+                "name": "http1",
+                "protocol": "TCP"
+              }
+            ],
+            "readinessProbe": {
+              "successThreshold": 1,
+              "tcpSocket": {
+                "port": 0
+              }
+            },
+            "resources": {
+              "limits": {
+                "cpu": "500m",
+                "memory": "256Mi"
+              },
+              "requests": {
+                "cpu": "50m",
+                "memory": "64Mi"
+              }
+            }
+          }
+        ],
+        "enableServiceLinks": false,
+        "timeoutSeconds": 30
+      }
+    },
+    "traffic": [
+      {
+        "latestRevision": false,
+        "percent": 90,
+        "revisionName": "order-processor-00001",
+        "tag": "stable"
+      },
+      {
+        "latestRevision": false,
+        "percent": 10,
+        "revisionName": "order-processor-00002",
+        "tag": "canary"
+      }
+    ]
+  },
+  "status": {
+    "address": {
+      "url": "http://order-processor.knect-e2e.svc.cluster.local"
+    },
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-31T21:34:22Z",
+        "status": "True",
+        "type": "ConfigurationsReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-31T21:34:23Z",
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-31T21:34:23Z",
+        "status": "True",
+        "type": "RoutesReady"
+      }
+    ],
+    "latestCreatedRevisionName": "order-processor-00002",
+    "latestReadyRevisionName": "order-processor-00002",
+    "observedGeneration": 2,
+    "traffic": [
+      {
+        "latestRevision": false,
+        "percent": 90,
+        "revisionName": "order-processor-00001",
+        "tag": "stable",
+        "url": "http://stable-order-processor.knect-e2e.sslip.io"
+      },
+      {
+        "latestRevision": false,
+        "percent": 10,
+        "revisionName": "order-processor-00002",
+        "tag": "canary",
+        "url": "http://canary-order-processor.knect-e2e.sslip.io"
+      }
+    ],
+    "url": "http://order-processor.knect-e2e.sslip.io"
+  }
+}

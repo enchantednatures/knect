@@ -1,0 +1,418 @@
+[
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "orders-kafka-kafka-bootstrap",
+      "namespace": "knect-e2e",
+      "uid": "uid-svc-orders-kafka",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "selector": { "strimzi.io/cluster": "orders-kafka" },
+      "ports": [{ "name": "tcp-kafka", "port": 9092, "targetPort": 9092 }]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "redpanda",
+      "namespace": "knect-e2e",
+      "uid": "uid-svc-redpanda",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "selector": { "app.kubernetes.io/name": "redpanda" },
+      "ports": [{ "name": "kafka", "port": 9092, "targetPort": 9092 }]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "rabbitmq-broker",
+      "namespace": "knect-e2e",
+      "uid": "uid-svc-rabbitmq",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "selector": { "app.kubernetes.io/name": "rabbitmq-broker" },
+      "ports": [{ "name": "amqp", "port": 5672, "targetPort": 5672 }]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "dragonfly",
+      "namespace": "knect-e2e",
+      "uid": "uid-svc-dragonfly",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "selector": { "app": "dragonfly" },
+      "ports": [{ "name": "redis", "port": 6379, "targetPort": 6379 }]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "redis",
+      "namespace": "knect-e2e",
+      "uid": "uid-svc-redis",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "selector": { "app": "redis" },
+      "ports": [{ "name": "redis", "port": 6379, "targetPort": 6379 }]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "postgres-rw",
+      "namespace": "knect-e2e",
+      "uid": "uid-svc-postgres-rw",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "selector": { "cnpg.io/cluster": "postgres", "cnpg.io/instanceRole": "primary" },
+      "ports": [{ "name": "postgres", "port": 5432, "targetPort": 5432 }]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Endpoints",
+    "metadata": {
+      "name": "orders-kafka-kafka-bootstrap",
+      "namespace": "knect-e2e",
+      "uid": "uid-endpoints-orders-kafka",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "subsets": [
+      {
+        "addresses": [{ "ip": "10.0.0.10", "hostname": "orders-kafka-0" }],
+        "ports": [{ "name": "tcp-kafka", "port": 9092 }]
+      }
+    ]
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Secret",
+    "metadata": {
+      "name": "orders-kafka-credentials",
+      "namespace": "knect-e2e",
+      "uid": "uid-secret-orders-kafka",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "annotations": {
+        "knect.dev/token": "hunter2-knect-sentinel"
+      }
+    },
+    "type": "Opaque",
+    "data": {
+      "password": "aHVudGVyMi1rbmVjdC1zZW50aW5lbA=="
+    }
+  },
+  {
+    "apiVersion": "eventing.knative.dev/v1",
+    "kind": "Broker",
+    "metadata": {
+      "name": "orders-kafka",
+      "namespace": "knect-e2e",
+      "uid": "uid-broker-orders-kafka",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "annotations": {
+        "eventing.knative.dev/broker.class": "Kafka"
+      }
+    },
+    "spec": {},
+    "status": {
+      "address": {
+        "name": "http",
+        "url": "http://orders-kafka-kafka-bootstrap.knect-e2e.svc.cluster.local:9092"
+      },
+      "annotations": {
+        "bootstrap.servers": "orders-kafka-kafka-bootstrap.knect-e2e.svc.cluster.local:9092",
+        "default.topic": "orders"
+      },
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "eventing.knative.dev/v1",
+    "kind": "Broker",
+    "metadata": {
+      "name": "redpanda-kafka",
+      "namespace": "knect-e2e",
+      "uid": "uid-broker-redpanda-kafka",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "annotations": {
+        "eventing.knative.dev/broker.class": "Kafka"
+      }
+    },
+    "spec": {},
+    "status": {
+      "address": {
+        "name": "http",
+        "url": "http://redpanda.knect-e2e.svc.cluster.local:9092"
+      },
+      "annotations": {
+        "bootstrap.servers": "redpanda.knect-e2e.svc.cluster.local:9092",
+        "default.topic": "knative-broker-knect-e2e-redpanda"
+      },
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "eventing.knative.dev/v1",
+    "kind": "Broker",
+    "metadata": {
+      "name": "orders-rabbitmq",
+      "namespace": "knect-e2e",
+      "uid": "uid-broker-orders-rabbitmq",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "annotations": {
+        "eventing.knative.dev/broker.class": "RabbitMQBroker"
+      }
+    },
+    "spec": {},
+    "status": {
+      "address": {
+        "name": "http",
+        "url": "http://rabbitmq-broker.knect-e2e.svc.cluster.local"
+      },
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "kafka.strimzi.io/v1beta2",
+    "kind": "Kafka",
+    "metadata": {
+      "name": "orders-kafka",
+      "namespace": "knect-e2e",
+      "uid": "uid-kafka-orders",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "labels": { "app": "orders-kafka" },
+      "annotations": {
+        "strimzi.io/cluster-credentials": "hunter2-knect-sentinel"
+      }
+    },
+    "spec": {
+      "kafka": {
+        "replicas": 3,
+        "storage": { "type": "ephemeral" }
+      }
+    },
+    "status": {
+      "readyReplicas": 3,
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "kafka.strimzi.io/v1beta2",
+    "kind": "KafkaTopic",
+    "metadata": {
+      "name": "orders",
+      "namespace": "knect-e2e",
+      "uid": "uid-kafkatopic-orders",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "labels": { "strimzi.io/cluster": "orders-kafka" }
+    },
+    "spec": {
+      "topicName": "orders",
+      "partitions": 12,
+      "replicas": 3
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "cluster.redpanda.com/v1alpha2",
+    "kind": "Cluster",
+    "metadata": {
+      "name": "redpanda",
+      "namespace": "knect-e2e",
+      "uid": "uid-redpanda-cluster",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "labels": { "app.kubernetes.io/name": "redpanda" }
+    },
+    "spec": {
+      "replicas": 3
+    },
+    "status": {
+      "readyReplicas": 3,
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "cluster.redpanda.com/v1alpha1",
+    "kind": "Topic",
+    "metadata": {
+      "name": "knative-broker-knect-e2e-redpanda",
+      "namespace": "knect-e2e",
+      "uid": "uid-redpanda-topic",
+      "creationTimestamp": "2026-10-31T21:33:00Z",
+      "labels": { "cluster.redpanda.com/cluster": "redpanda" }
+    },
+    "spec": {
+      "partitions": 6,
+      "replicationFactor": 3
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "False",
+          "reason": "PartitionLimitExceeded",
+          "message": "topic partitions exceed the allowed quota",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "rabbitmq.com/v1beta1",
+    "kind": "RabbitmqCluster",
+    "metadata": {
+      "name": "rabbitmq-broker",
+      "namespace": "knect-e2e",
+      "uid": "uid-rabbitmq-cluster",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "replicas": 3,
+      "queue": "orders",
+      "exchange": "knect"
+    },
+    "status": {
+      "readyReplicas": 3,
+      "conditions": [
+        {
+          "type": "AllReplicasReady",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        },
+        {
+          "type": "ClusterAvailable",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "dragonflydb.io/v1alpha1",
+    "kind": "Dragonfly",
+    "metadata": {
+      "name": "dragonfly",
+      "namespace": "knect-e2e",
+      "uid": "uid-dragonfly",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "replicas": 2
+    },
+    "status": {
+      "readyReplicas": 2,
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "redis.redis.opstreelabs.in/v1beta2",
+    "kind": "RedisCluster",
+    "metadata": {
+      "name": "redis",
+      "namespace": "knect-e2e",
+      "uid": "uid-redis-cluster",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "kubernetesConfig": {
+        "replicas": 3
+      }
+    },
+    "status": {
+      "readyReplicas": 2,
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "False",
+          "reason": "NotAllReplicasReady",
+          "message": "waiting for redis replicas",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "postgresql.cnpg.io/v1",
+    "kind": "Cluster",
+    "metadata": {
+      "name": "postgres",
+      "namespace": "knect-e2e",
+      "uid": "uid-postgres-cluster",
+      "creationTimestamp": "2026-10-31T21:33:00Z"
+    },
+    "spec": {
+      "instances": 3
+    },
+    "status": {
+      "instances": 3,
+      "readyInstances": 3,
+      "phase": "Cluster in healthy state",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastTransitionTime": "2026-10-31T21:34:23Z"
+        }
+      ]
+    }
+  }
+]
