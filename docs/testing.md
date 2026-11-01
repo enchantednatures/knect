@@ -64,7 +64,10 @@ cargo run -p knect-e2e --locked -- --all
 The harness uses `/tmp/knect-e2e-kubeconfig` and context `kind-knect-e2e`. It
 never reads or modifies the user's default kubeconfig. The full stack includes
 Istio, Knative Serving/Eventing, Kafka, RabbitMQ, Kyverno, Flagger, CNPG,
-Redis, Redpanda, and Rook CRDs.
+Redis, Redpanda, and Rook CRDs. A clean run was measured at **784 seconds**
+with the Kind node using about **6.9 GiB** of memory; the 3-minute target
+requires a pre-baked node image because Knative install/readiness dominates the
+cold path.
 
 Live probes that are normally ignored:
 
