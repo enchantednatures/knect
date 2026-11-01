@@ -1,0 +1,37 @@
+name: nvim
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plenary:
+    name: neovim ${{ matrix.neovim }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        neovim:
+          - v0.10.4
+          - stable
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.neovim }}
+
+      - name: Cache test-only Neovim plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/knect-nvim-deps
+          key: ${{ runner.os }}-knect-nvim-deps-${{ hashFiles('hack/nvim-test.sh') }}
+
+      - name: Run headless Plenary suite
+        run: ./hack/nvim-test.sh

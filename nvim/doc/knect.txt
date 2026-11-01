@@ -1,0 +1,144 @@
+*knect.nvim* *knect* *knect-lua*
+
+knect.nvim is a zero-dependency Neovim client for the knect daemon. It speaks
+newline-delimited JSON-RPC over `/tmp/knectd.sock` (or an optional HTTP/JSON-RPC
+endpoint) and renders the Knative Serving/Eventing topology, policy violations,
+three-way mutation attribution, and a live CloudEvent tap.
+
+Runtime requirements: Neovim >= 0.10 and the `knectd` daemon. There are no Lua
+runtime dependencies. Optional integrations:
+
+- Nui.nvim (`nui.split`) for the topology explorer.
+- Telescope.nvim for the command pickers.
+- Plenary.nvim only for the headless test suite.
+
+Without Nui or Telescope the plugin degrades to floating windows and
+`vim.ui.select`.
+
+==============================================================================
+COMMANDS                                                    *knect-commands*
+
+:Knect                                                          *:Knect*
+    Open the topology explorer. Renders Services, Brokers, Sources, and other
+    resources as an ASCII tree/DAG. Node details (health, policies, managed
+    fields, links, storage, redacted YAML) appear in a side pane.
+
+    Tree keymaps:
+      j / <Down>    next node or edge
+      k / <Up>      previous node or edge
+      <CR>          refresh the details pane
+      r             refresh the topology
+      <Tab>         focus the details pane
+      q / <Esc>     close the explorer
+
+:KnectServices                                              *:KnectServices*
+    List Knative Services. Uses Telescope when available, otherwise
+    `vim.ui.select`.
+
+:KnectBrokers                                                *:KnectBrokers*
+    List Knative Brokers. Same picker behavior as `:KnectServices`.
+
+:KnectViolations                                          *:KnectViolations*
+    List graph warnings, node warnings, and policy findings whose result is
+    `fail`, `warn`, or `error`. Nodes are inspected with
+    `graph.get_node_details`.
+
+:KnectDiff                                                      *:KnectDiff*
+    Open a three-way diff for the current YAML buffer:
+      1. the local buffer,
+      2. the live redacted object from `graph.get_node_details`,
+      3. managedFields attribution from `mutations.get_diff`.
+    The local buffer must be YAML and contain `apiVersion`, `kind`, and
+    `metadata.name`. Scratch panes use Neovim diff mode; `vim.diff` computes the
+    local-to-live patch. Press `q` in either scratch pane to close.
+
+:KnectTap [kind] [namespace/name]                                 *:KnectTap*
+    Start a live CloudEvent tap. `kind` is `broker` (default) or `trigger`.
+    With no arguments a target picker is shown. The scratch buffer streams one
+    block per `tap.event` with ce-id, ce-type, ce-source, ce-time, and the
+    pretty-printed payload.
+
+      :KnectTap broker default/orders
+      :KnectTap trigger default orders-to-hello
+
+:KnectTapStop                                                *:KnectTapStop*
+    Stop the active tap, unsubscribe from the event stream, and close the tap
+    buffer. Closing the tap buffer does the same.
+
+==============================================================================
+CONFIGURATION                                                *knect-config*
+
+Configure with `require("knect").setup({ ... })`. Every field is optional.
+
+    require("knect").setup({
+      socket_path = "/tmp/knectd.sock", -- UDS path
+      http_addr = nil,                  -- e.g. "http://127.0.0.1:7420"
+      transport = "auto",               -- auto | uds | http
+      auto_connect = true,              -- connect on first command
+      timeout_ms = 5000,
+      debounce_ms = 100,
+      nui = true,                       -- force false for floating UI
+      telescope = true,                 -- force false for vim.ui.select
+      reconnect = {
+        initial_ms = 250,
+        max_ms = 5000,
+        multiplier = 2,
+      },
+      tap = {
+        max_events = 500,
+        ttl_secs = 300,
+      },
+      curl = "curl",                    -- HTTP fallback executable
+    })
+
+Environment defaults (read once at module load):
+  `KNECT_SOCKET_PATH`, `KNECT_HTTP_ADDR`, `KNECT_TRANSPORT`.
+
+Transports ~
+`auto` (default) prefers the UDS socket and falls back to `http_addr` when the
+socket cannot be reached. `uds` disables the fallback. `http` skips the socket.
+The HTTP fallback requires `curl` and `vim.system`; it supports JSON-RPC only.
+Live events (`:KnectTap`) require the UDS JSONL transport because schema v1
+streams events on the socket, not over POST /rpc.
+
+==============================================================================
+LUA API                                                        *knect-api*
+
+require("knect").setup({opts})                         *knect.setup()*
+    Merge configuration and register commands.
+
+require("knect.rpc").request(method, params, cb, opts)    *knect-rpc*
+    Send one JSON-RPC request. `cb(err, result)` is always invoked
+    asynchronously. Returns the numeric request ID.
+
+require("knect.rpc").subscribe_events(cb, opts)
+    Subscribe to `SseEvent` lines. `opts` may contain `topics`,
+    `last_event_id`, and `on_error`. Returns `{ stop = fn, id = fn }`.
+
+require("knect.rpc").connect(cb)
+    Connect eagerly instead of lazily. `require("knect.rpc").close()` closes
+    the pipe and rejects in-flight requests.
+
+require("knect.topology").open({opts})
+    Open the explorer. `opts.ui = "floating"` or `"nui"` forces a renderer;
+    `opts.select_id = ResourceId` starts on a specific node.
+
+require("knect.diff").open({opts}) / require("knect.diff").close()
+    Programmatic three-way diff. `opts.id` and `opts.bufnr` override manifest
+    discovery.
+
+require("knect.tap").open({ kind, namespace, name })
+    Programmatic tap. `require("knect.tap").close()` stops it.
+
+==============================================================================
+HEALTH                                                      *knect-health*
+
+`:checkhealth knect` reports the Neovim version, `vim.uv`/`vim.json`/`vim.system`
+availability, daemon socket presence, curl availability, optional plugin
+detection, and command registration.
+
+The client reconnects with exponential backoff while an event subscriber is
+active, correlates responses by request ID, buffers partial JSONL lines, and
+enforces `timeout_ms` per request. No network I/O blocks the editor.
+
+vim:tw=78:ts=8:ft=help:norl:
