@@ -61,6 +61,12 @@ end
 ---@return table
 function M.setup(opts)
   config.setup(opts)
+  local yaml_opts = opts and opts.yaml
+  if type(yaml_opts) ~= "table" then
+    yaml_opts = {}
+  end
+  yaml_opts = vim.tbl_deep_extend("force", { auto_attach = true }, yaml_opts)
+  require("knect.yaml").setup(yaml_opts)
   M.ensure_commands()
   return M
 end
@@ -88,6 +94,19 @@ end
 ---@param target table|nil
 function M.tap(target)
   return require("knect.tap").open(target)
+end
+
+--- Attach live YAML hints and pre-flight diagnostics to a buffer.
+---@param bufnr integer|nil
+---@return table|nil
+function M.attach(bufnr)
+  return require("knect.yaml").attach(bufnr)
+end
+
+--- Detach live YAML hints and diagnostics from a buffer.
+---@param bufnr integer|nil
+function M.detach(bufnr)
+  return require("knect.yaml").detach(bufnr)
 end
 
 return M
