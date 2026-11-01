@@ -1,6 +1,9 @@
 //! UI events delivered to the event loop.
 
+use knect_proto::events::ActionResult;
+use knect_proto::mutation::MutationDiff;
 use knect_proto::rpc::DaemonStatus;
+use knect_proto::tap::TapHandle;
 use knect_proto::{NodeDetails, ResourceId, SseEvent, Topology};
 use ratatui::crossterm::event::KeyEvent;
 
@@ -39,6 +42,30 @@ pub enum UiEvent {
     LogsSubscribed {
         /// Subscription ID from the daemon.
         subscription: String,
+    },
+    /// Mutation diff response.
+    Diff {
+        /// Resource that was requested.
+        id: ResourceId,
+        /// Decoded diff, or a displayable error.
+        result: Result<Box<MutationDiff>, String>,
+    },
+    /// Traffic split action response.
+    TrafficResult {
+        /// Action result, or a displayable error.
+        result: Result<Box<ActionResult>, String>,
+    },
+    /// CloudEvent tap start response.
+    TapStarted {
+        /// Tap handle, or a displayable error.
+        result: Result<Box<TapHandle>, String>,
+    },
+    /// CloudEvent tap stop response.
+    TapStopped {
+        /// Tap that was stopped.
+        tap_id: String,
+        /// Displayable error, if any.
+        error: Option<String>,
     },
     /// Non-fatal notice for the status bar.
     Notice {

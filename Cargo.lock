@@ -1901,7 +1901,7 @@ dependencies = [
 
 [[package]]
 name = "knect-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -1936,7 +1936,7 @@ dependencies = [
 
 [[package]]
 name = "knect-e2e"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "clap",
@@ -1949,7 +1949,7 @@ dependencies = [
 
 [[package]]
 name = "knect-proto"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "insta",
@@ -1962,7 +1962,7 @@ dependencies = [
 
 [[package]]
 name = "knect-tui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "async-stream",
  "axum",
@@ -1976,6 +1976,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -1986,7 +1987,7 @@ dependencies = [
 
 [[package]]
 name = "knectd"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-stream",

@@ -18,7 +18,7 @@ expression: "draw_text(&state, 80, 24)"
 │   │?           toggle this help                                          │eou│
 │   │Esc         close overlays and prompts                                │   │
 │   │q           quit                                                      │eda│
-└───│d / t / w   reserved for mutation, traffic, and tap modals (Task 14)  │───┘
+└───│d / t / w   mutation diff · traffic split · CloudEvent tap            │───┘
 ┌Log│                                                                      │───┐
 │no │                                                                      │   │
 │   └──────────────────────────────────────────────────────────────────────┘   │

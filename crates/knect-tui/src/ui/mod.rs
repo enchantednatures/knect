@@ -1,11 +1,15 @@
 //! Dashboard rendering entry point.
 
+pub mod diff_modal;
 pub mod graph;
 pub mod help;
 pub mod inspector;
 pub mod layout;
 pub mod logs;
+pub mod modal;
+pub mod tap_modal;
 pub mod theme;
+pub mod traffic_modal;
 pub mod tree;
 
 use ratatui::Frame;
@@ -35,6 +39,7 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
     if state.help_visible {
         help::render(frame, area);
     }
+    modal::render(frame, area, state);
 }
 
 fn render_too_small(frame: &mut Frame<'_>, area: Rect) {

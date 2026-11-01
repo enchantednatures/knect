@@ -15,13 +15,17 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{get, post};
 use chrono::Utc;
 use knect_proto::error::{METHOD_NOT_FOUND, NOT_FOUND};
-use knect_proto::events::{Heartbeat, SseEvent, SseEventKind};
-use knect_proto::graph::Topology;
-use knect_proto::ids::Gvk;
-use knect_proto::rpc::{
-    DaemonStatus, GetNodeDetailsParams, LogsSubscribeParams, WatcherStatus, methods,
+use knect_proto::events::{ActionResult, Heartbeat, SseEvent, SseEventKind};
+use knect_proto::graph::{
+    Edge, EdgeKind, Health, NodeCategory, ResourceNode, Topology, TopologyStats,
 };
-use knect_proto::tap::{LogLine, LogStream};
+use knect_proto::ids::Gvk;
+use knect_proto::mutation::MutationDiff;
+use knect_proto::rpc::{
+    DaemonStatus, GetDiffParams, GetNodeDetailsParams, LogsSubscribeParams, SetTrafficSplitParams,
+    TapStartParams, TapStopParams, TapStopResult, WatcherStatus, methods,
+};
+use knect_proto::tap::{LogLine, LogStream, TapEvent, TapHandle, TapState};
 use knect_proto::{NodeDetails, ResourceId, RpcError, RpcRequest, RpcResponse};
 use knect_tui::app::state::{AppState, ConnectionStatus, InspectorTab};
 use serde_json::{Value, json};
@@ -41,6 +45,85 @@ pub fn fixture_topology() -> Topology {
     let path = repository_path("testdata/contracts/topology.sample.json");
     let raw = std::fs::read_to_string(&path).expect("read topology fixture");
     serde_json::from_str(&raw).expect("decode topology fixture")
+}
+
+pub fn fixture_diff() -> MutationDiff {
+    let path = repository_path("testdata/contracts/mutation_diff.sample.json");
+    let raw = std::fs::read_to_string(&path).expect("read diff fixture");
+    serde_json::from_str(&raw).expect("decode diff fixture")
+}
+
+pub fn interactive_topology() -> Topology {
+    let mut topology = fixture_topology();
+    let service = topology
+        .nodes
+        .iter()
+        .find(|node| node.category == NodeCategory::KService)
+        .expect("fixture KService")
+        .clone();
+    let revision = topology
+        .nodes
+        .iter()
+        .find(|node| node.category == NodeCategory::Revision)
+        .expect("fixture Revision")
+        .clone();
+    let route_id = ResourceId::namespaced(
+        "serving.knative.dev/v1",
+        "Route",
+        "default",
+        service.name.clone(),
+    );
+    let route = ResourceNode {
+        id: route_id.clone(),
+        category: NodeCategory::Route,
+        name: service.name.clone(),
+        namespace: Some("default".to_owned()),
+        health: Health::Healthy,
+        summary: format!("100% {}", revision.name),
+        labels: Default::default(),
+        annotations: Default::default(),
+        badges: Vec::new(),
+        uid: None,
+        first_seen: service.first_seen,
+        last_seen: service.last_seen,
+    };
+    let mut owns = Edge {
+        id: "stub-owns-route".to_owned(),
+        from: service.id.clone(),
+        to: route_id.clone(),
+        kind: EdgeKind::Owns,
+        label: None,
+        health: Health::Healthy,
+        warnings: Vec::new(),
+        metadata: Default::default(),
+    };
+    owns.metadata
+        .insert("route".to_owned(), serde_json::json!(service.name));
+    let mut traffic = Edge {
+        id: "stub-routes-revision".to_owned(),
+        from: route_id,
+        to: revision.id.clone(),
+        kind: EdgeKind::RoutesTo,
+        label: Some("<redacted>".to_owned()),
+        health: Health::Healthy,
+        warnings: Vec::new(),
+        metadata: Default::default(),
+    };
+    traffic
+        .metadata
+        .insert("percent".to_owned(), serde_json::json!(100));
+    traffic
+        .metadata
+        .insert("tag".to_owned(), serde_json::json!("current"));
+    topology.nodes.push(route);
+    topology.edges.push(owns);
+    topology.edges.push(traffic);
+    topology.stats = TopologyStats {
+        node_count: topology.nodes.len() as u64,
+        edge_count: topology.edges.len() as u64,
+        ..TopologyStats::default()
+    };
+    topology
 }
 
 pub fn fixture_details() -> NodeDetails {
@@ -104,13 +187,22 @@ impl Drop for StubServer {
 }
 
 pub async fn start_stub_daemon() -> StubServer {
+    start_stub_daemon_with(fixture_topology()).await
+}
+
+pub async fn start_interactive_stub_daemon() -> StubServer {
+    start_stub_daemon_with(interactive_topology()).await
+}
+
+pub async fn start_stub_daemon_with(topology: Topology) -> StubServer {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind stub listener");
     let address = listener.local_addr().expect("stub address");
     let state = Arc::new(StubState {
-        topology: fixture_topology(),
+        topology,
         details: fixture_details(),
+        diff: fixture_diff(),
     });
     let app = Router::new()
         .route("/rpc", post(rpc))
@@ -139,6 +231,7 @@ pub async fn start_stub_daemon() -> StubServer {
 struct StubState {
     topology: Topology,
     details: NodeDetails,
+    diff: MutationDiff,
 }
 
 async fn health() -> Json<Value> {
@@ -170,6 +263,60 @@ fn dispatch(state: &StubState, request: &RpcRequest) -> Result<Value, (i32, Stri
         methods::LOGS_SUBSCRIBE => {
             let _: Option<LogsSubscribeParams> = decode_params(request)?;
             Ok(json!({"subscription_id": "stub-logs"}))
+        }
+        methods::MUTATIONS_GET_DIFF => {
+            let params: GetDiffParams =
+                decode_params(request)?.ok_or((NOT_FOUND, "missing params".to_owned()))?;
+            let mut diff = state.diff.clone();
+            diff.resource = params.id;
+            encode(diff)
+        }
+        methods::ACTIONS_SET_TRAFFIC_SPLIT => {
+            let params: SetTrafficSplitParams =
+                decode_params(request)?.ok_or((NOT_FOUND, "missing params".to_owned()))?;
+            let dry_run = params.dry_run.unwrap_or(false);
+            let message = format!(
+                "{}traffic split for {}/{}: {}",
+                if dry_run { "dry run: " } else { "" },
+                params.namespace,
+                params.service,
+                params
+                    .splits
+                    .iter()
+                    .map(|split| format!("{}={}%", split.revision, split.percent))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            encode(ActionResult {
+                action: "actions.set_traffic_split".to_owned(),
+                success: true,
+                message,
+                dry_run,
+                resource: None,
+                generation: Some(state.topology.generation),
+                warnings: Vec::new(),
+                ts: Utc::now(),
+            })
+        }
+        methods::TAP_START => {
+            let params: TapStartParams =
+                decode_params(request)?.ok_or((NOT_FOUND, "missing params".to_owned()))?;
+            let now = Utc::now();
+            encode(TapHandle {
+                id: "stub-tap".to_owned(),
+                target: params.target,
+                state: TapState::Active,
+                created: now,
+                expires: now + chrono::Duration::seconds(60),
+                max_events: params.max_events.unwrap_or(200),
+                callback_url: "http://127.0.0.1:1/tap/stub".to_owned(),
+                filter: None,
+            })
+        }
+        methods::TAP_STOP => {
+            let _: TapStopParams =
+                decode_params(request)?.ok_or((NOT_FOUND, "missing params".to_owned()))?;
+            encode(TapStopResult { removed: true })
         }
         methods::TAP_LIST => Ok(json!([])),
         methods::EVENTS_SUBSCRIBE => Err((
@@ -256,22 +403,44 @@ async fn events(
         yield Ok(frame(&log));
         let mut sequence = 3_u64;
         loop {
-            tokio::time::sleep(Duration::from_secs(10)).await;
-            let heartbeat = SseEvent::new(
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            let now = Utc::now();
+            let event = SseEvent::new(
                 sequence,
-                Utc::now(),
-                SseEventKind::Heartbeat {
-                    data: Heartbeat {
-                        uptime_secs: sequence,
-                        generation: 42,
-                        node_count: 4,
-                        edge_count: 3,
-                        ts: Utc::now(),
+                now,
+                SseEventKind::TapEvent {
+                    data: TapEvent {
+                        id: format!("tap-event-{sequence}"),
+                        ce_id: format!("ce-{sequence}"),
+                        ce_source: "/apis/eventing.knative.dev/v1/namespaces/default/brokers/orders".to_owned(),
+                        ce_type: "dev.knative.samples.orders.created".to_owned(),
+                        ce_subject: None,
+                        ce_time: Some(now),
+                        headers: Default::default(),
+                        payload: json!({"order": sequence}),
+                        received_at: now,
                     },
                 },
             );
             sequence = sequence.saturating_add(1);
-            yield Ok(frame(&heartbeat));
+            yield Ok(frame(&event));
+            if sequence.is_multiple_of(20) {
+                let heartbeat = SseEvent::new(
+                    sequence,
+                    Utc::now(),
+                    SseEventKind::Heartbeat {
+                        data: Heartbeat {
+                            uptime_secs: sequence,
+                            generation: 42,
+                            node_count: state.topology.nodes.len() as u64,
+                            edge_count: state.topology.edges.len() as u64,
+                            ts: Utc::now(),
+                        },
+                    },
+                );
+                sequence = sequence.saturating_add(1);
+                yield Ok(frame(&heartbeat));
+            }
         }
     };
     Sse::new(stream).keep_alive(KeepAlive::default())

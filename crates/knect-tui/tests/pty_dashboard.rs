@@ -40,7 +40,7 @@ fn artifact_directory() -> PathBuf {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pty_dashboard_renders_navigates_and_exits() {
-    let server = support::start_stub_daemon().await;
+    let server = support::start_interactive_stub_daemon().await;
     let rows = NonZeroU16::new(40).expect("rows");
     let cols = NonZeroU16::new(120).expect("cols");
     let pty_system = native_pty_system();
@@ -94,6 +94,9 @@ async fn pty_dashboard_renders_navigates_and_exits() {
     writer.write_all(b"j").expect("send j");
     writer.flush().expect("flush");
     drain(&receiver, &mut parser, &mut raw, Duration::from_millis(400));
+    writer.write_all(b"k").expect("send k");
+    writer.flush().expect("flush");
+    drain(&receiver, &mut parser, &mut raw, Duration::from_millis(400));
     writer.write_all(b"2").expect("send 2");
     writer.flush().expect("flush");
     drain(&receiver, &mut parser, &mut raw, Duration::from_millis(500));
@@ -111,6 +114,71 @@ async fn pty_dashboard_renders_navigates_and_exits() {
         .expect("write text artifact");
     std::fs::write(directory.join("knect-pty-dashboard.ansi"), &raw).expect("write ansi artifact");
 
+    writer.write_all(b"d").expect("send d");
+    writer.flush().expect("flush");
+    drain(&receiver, &mut parser, &mut raw, Duration::from_millis(900));
+    let diff = parser.screen().contents();
+    for expected in [
+        "Mutation diff",
+        "User intent",
+        "Knative defaults",
+        "Policy mutators",
+        "knative-serving-controller",
+    ] {
+        assert!(
+            diff.contains(expected),
+            "missing {expected} in diff modal:\n{diff}"
+        );
+    }
+    std::fs::write(directory.join("knect-pty-diff.txt"), &diff).expect("write diff artifact");
+    writer.write_all(b"\x1b").expect("send Esc");
+    writer.flush().expect("flush");
+    drain(&receiver, &mut parser, &mut raw, Duration::from_millis(300));
+
+    writer.write_all(b"t").expect("send t");
+    writer.flush().expect("flush");
+    drain(&receiver, &mut parser, &mut raw, Duration::from_millis(700));
+    let traffic = parser.screen().contents();
+    for expected in ["Traffic split", "hello-00001", "total 100%", "valid"] {
+        assert!(
+            traffic.contains(expected),
+            "missing {expected} in traffic modal:\n{traffic}"
+        );
+    }
+    std::fs::write(directory.join("knect-pty-traffic.txt"), &traffic)
+        .expect("write traffic artifact");
+    writer.write_all(b"\x1b").expect("send Esc");
+    writer.flush().expect("flush");
+    drain(&receiver, &mut parser, &mut raw, Duration::from_millis(300));
+
+    writer.write_all(b"\t\t").expect("focus the tree pane");
+    writer.flush().expect("flush");
+    drain(&receiver, &mut parser, &mut raw, Duration::from_millis(250));
+    writer.write_all(b"jjj").expect("select broker");
+    writer.flush().expect("flush");
+    drain(&receiver, &mut parser, &mut raw, Duration::from_millis(400));
+    writer.write_all(b"w").expect("send w");
+    writer.flush().expect("flush");
+    let tap_deadline = Instant::now() + Duration::from_secs(6);
+    loop {
+        drain(&receiver, &mut parser, &mut raw, Duration::from_millis(300));
+        let screen = parser.screen().contents();
+        if screen.contains("Tap — Broker default/orders")
+            && screen.contains("dev.knative.samples.orders.created")
+        {
+            break;
+        }
+        if Instant::now() > tap_deadline {
+            panic!("tap modal did not render events:\n{screen}");
+        }
+    }
+    let tap = parser.screen().contents();
+    assert!(tap.contains("ce-"), "tap modal did not show ce-id:\n{tap}");
+    std::fs::write(directory.join("knect-pty-tap.txt"), &tap).expect("write tap artifact");
+    writer.write_all(b"\x1b").expect("send Esc");
+    writer.flush().expect("flush");
+    drain(&receiver, &mut parser, &mut raw, Duration::from_millis(300));
+
     writer.write_all(b"?").expect("send ?");
     writer.flush().expect("flush");
     drain(&receiver, &mut parser, &mut raw, Duration::from_millis(500));
@@ -122,8 +190,15 @@ async fn pty_dashboard_renders_navigates_and_exits() {
         "daemon_url": server.url,
         "rows": rows.get(),
         "cols": cols.get(),
-        "keys": ["j", "2", "?", "Esc", "q"],
-        "artifacts": ["knect-pty-dashboard.txt", "knect-pty-dashboard.ansi", "knect-pty-help.txt"],
+        "keys": ["j", "k", "2", "d", "t", "w", "?", "Esc", "q"],
+        "artifacts": [
+            "knect-pty-dashboard.txt",
+            "knect-pty-dashboard.ansi",
+            "knect-pty-diff.txt",
+            "knect-pty-traffic.txt",
+            "knect-pty-tap.txt",
+            "knect-pty-help.txt"
+        ],
     });
     std::fs::write(
         directory.join("metadata.json"),

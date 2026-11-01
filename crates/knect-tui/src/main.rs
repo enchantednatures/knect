@@ -17,7 +17,8 @@ async fn main() {
             }
         }
         Some(command) => {
-            if let Err(error) = cli::run(command, cli.socket.as_deref(), cli.daemon_url.as_deref())
+            if let Err(error) =
+                cli::run(command, cli.socket.as_deref(), cli.daemon_url.as_deref()).await
             {
                 eprintln!("knect: {error}");
                 std::process::exit(1);

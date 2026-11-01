@@ -25,7 +25,7 @@ const HELP_ROWS: &[(&str, &str)] = &[
     ("q", "quit"),
     (
         "d / t / w",
-        "reserved for mutation, traffic, and tap modals (Task 14)",
+        "mutation diff · traffic split · CloudEvent tap",
     ),
 ];
 
@@ -89,7 +89,18 @@ mod tests {
             .iter()
             .map(|(keys, description)| format!("{keys} {description}"))
             .collect();
-        for required in ["j / k", "h / l", "gd", "/", "Tab", "1..4", "?", "Esc", "q"] {
+        for required in [
+            "j / k",
+            "h / l",
+            "gd",
+            "/",
+            "Tab",
+            "1..4",
+            "?",
+            "Esc",
+            "q",
+            "d / t / w",
+        ] {
             assert!(text.contains(required), "help is missing {required}");
         }
         assert_eq!(shortcut_count(), HELP_ROWS.len());

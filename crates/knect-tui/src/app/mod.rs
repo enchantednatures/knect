@@ -3,6 +3,7 @@
 pub mod actions;
 pub mod event;
 pub mod keys;
+pub mod modal;
 pub mod state;
 
 use std::path::PathBuf;
@@ -10,10 +11,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt;
+use knect_proto::events::ActionResult;
+use knect_proto::mutation::MutationDiff;
 use knect_proto::rpc::{
-    DaemonStatus, DaemonStatusParams, GetNodeDetailsParams, GetTopologyParams, LogsSubscribeParams,
-    LogsSubscribeResult, methods,
+    DaemonStatus, DaemonStatusParams, GetDiffParams, GetNodeDetailsParams, GetTopologyParams,
+    LogsSubscribeParams, LogsSubscribeResult, TapStopParams, TapStopResult, methods,
 };
+use knect_proto::tap::TapHandle;
 use knect_proto::{NodeDetails, ResourceId, Topology};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -28,9 +32,10 @@ use ratatui::crossterm::terminal::{
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::app::actions::{Action, Effect, apply_action, selection_effects};
+use crate::app::actions::{Action, Effect, apply_action, apply_modal_key, selection_effects};
 use crate::app::event::UiEvent;
-use crate::app::keys::{KeyContext, map_key};
+use crate::app::keys::{KeyContext, map_key, map_modal_key, map_modal_text_key};
+use crate::app::modal::{Modal, ModalKind};
 use crate::app::state::{AppState, ConnectionStatus};
 use crate::client::{
     ClientError, ConnectOptions, Connected, RpcClient, SpawnedDaemon, connect, resolve_endpoint,
@@ -262,6 +267,66 @@ fn handle_event(state: &mut AppState, event: UiEvent) -> Vec<Effect> {
             state.set_status("log subscription active");
             Vec::new()
         }
+        UiEvent::Diff { id, result } => {
+            if let Modal::Diff(modal) = &mut state.modal
+                && modal.resource == id
+            {
+                modal.loading = false;
+                match result {
+                    Ok(diff) => {
+                        modal.diff = Some(*diff);
+                        modal.error = None;
+                    }
+                    Err(error) => {
+                        modal.diff = None;
+                        modal.error = Some(error);
+                    }
+                }
+                state.mark_dirty();
+            }
+            Vec::new()
+        }
+        UiEvent::TrafficResult { result } => {
+            if let Modal::Traffic(modal) = &mut state.modal {
+                modal.loading = false;
+                match result {
+                    Ok(action) => {
+                        modal.error = None;
+                        modal.result = Some(action.message.clone());
+                        state.set_status(format!("action {}: {}", action.action, action.message));
+                    }
+                    Err(error) => modal.error = Some(error),
+                }
+                state.mark_dirty();
+            }
+            Vec::new()
+        }
+        UiEvent::TapStarted { result } => {
+            if let Modal::Tap(modal) = &mut state.modal {
+                modal.starting = false;
+                match result {
+                    Ok(handle) => {
+                        modal.error = None;
+                        modal.tap = Some(*handle);
+                        state.set_status("tap active");
+                    }
+                    Err(error) => modal.error = Some(error),
+                }
+                state.mark_dirty();
+                return Vec::new();
+            }
+            match result {
+                Ok(handle) => vec![Effect::StopTap(handle.id.clone())],
+                Err(_) => Vec::new(),
+            }
+        }
+        UiEvent::TapStopped { tap_id, error } => {
+            match error {
+                Some(error) => state.set_error(format!("tap {tap_id} stop failed: {error}")),
+                None => state.set_status(format!("tap {tap_id} stopped")),
+            }
+            Vec::new()
+        }
         UiEvent::Notice { message, error } => {
             if error {
                 state.set_error(message);
@@ -280,6 +345,23 @@ fn handle_event(state: &mut AppState, event: UiEvent) -> Vec<Effect> {
 fn handle_key(state: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if key.kind == KeyEventKind::Release {
         return Vec::new();
+    }
+    if key
+        .modifiers
+        .contains(ratatui::crossterm::event::KeyModifiers::CONTROL)
+        && key.code == ratatui::crossterm::event::KeyCode::Char('c')
+    {
+        state.quit();
+        return Vec::new();
+    }
+    if state.modal_kind() != ModalKind::None
+        && state.input_mode != crate::app::state::InputMode::Filter
+    {
+        let mapped = match &state.modal {
+            Modal::Traffic(modal) if modal.edit.is_some() => map_modal_text_key(key),
+            _ => map_modal_key(key, state.modal_kind()),
+        };
+        return mapped.map_or_else(Vec::new, |action| apply_modal_key(state, action));
     }
     let context = KeyContext {
         mode: state.input_mode,
@@ -425,6 +507,103 @@ fn spawn_effect(
                     },
                     Err(error) => send_notice(&sender, format!("logs: {error}"), false),
                 }
+            });
+        }
+        Effect::FetchDiff(id) => {
+            tokio::spawn(async move {
+                let params = GetDiffParams {
+                    id: id.clone(),
+                    mode: Some(knect_proto::mutation::MutationDiffMode::ThreeWay),
+                };
+                let params = match serde_json::to_value(params) {
+                    Ok(params) => params,
+                    Err(error) => {
+                        let _ = sender.send(UiEvent::Diff {
+                            id,
+                            result: Err(format!("diff params: {error}")),
+                        });
+                        return;
+                    }
+                };
+                let result = match client
+                    .call(methods::MUTATIONS_GET_DIFF.to_owned(), Some(params))
+                    .await
+                {
+                    Ok(value) => serde_json::from_value::<MutationDiff>(value)
+                        .map(Box::new)
+                        .map_err(|error| format!("diff decode: {error}")),
+                    Err(error) => Err(error.to_string()),
+                };
+                let _ = sender.send(UiEvent::Diff { id, result });
+            });
+        }
+        Effect::SetTrafficSplit(params) => {
+            tokio::spawn(async move {
+                let dry_run = params.dry_run.unwrap_or(false);
+                let encoded = match serde_json::to_value(&params) {
+                    Ok(encoded) => encoded,
+                    Err(error) => {
+                        let _ = sender.send(UiEvent::TrafficResult {
+                            result: Err(format!("traffic params: {error}")),
+                        });
+                        return;
+                    }
+                };
+                let result = match client
+                    .call(methods::ACTIONS_SET_TRAFFIC_SPLIT.to_owned(), Some(encoded))
+                    .await
+                {
+                    Ok(value) => serde_json::from_value::<ActionResult>(value)
+                        .map(Box::new)
+                        .map_err(|error| format!("traffic decode: {error}")),
+                    Err(error) => Err(error.to_string()),
+                };
+                if dry_run && result.is_ok() {
+                    send_notice(
+                        &sender,
+                        "dry run complete; press s twice to apply".to_owned(),
+                        false,
+                    );
+                }
+                let _ = sender.send(UiEvent::TrafficResult { result });
+            });
+        }
+        Effect::StartTap(params) => {
+            tokio::spawn(async move {
+                let params = match serde_json::to_value(params) {
+                    Ok(params) => params,
+                    Err(error) => {
+                        let _ = sender.send(UiEvent::TapStarted {
+                            result: Err(format!("tap params: {error}")),
+                        });
+                        return;
+                    }
+                };
+                let result = match client
+                    .call(methods::TAP_START.to_owned(), Some(params))
+                    .await
+                {
+                    Ok(value) => serde_json::from_value::<TapHandle>(value)
+                        .map(Box::new)
+                        .map_err(|error| format!("tap decode: {error}")),
+                    Err(error) => Err(error.to_string()),
+                };
+                let _ = sender.send(UiEvent::TapStarted { result });
+            });
+        }
+        Effect::StopTap(tap_id) => {
+            tokio::spawn(async move {
+                let params = TapStopParams {
+                    tap_id: tap_id.clone(),
+                };
+                let encoded = serde_json::to_value(params).ok();
+                let error = match client.call(methods::TAP_STOP.to_owned(), encoded).await {
+                    Ok(value) => serde_json::from_value::<TapStopResult>(value)
+                        .err()
+                        .map(|error| format!("tap stop decode: {error}")),
+                    Err(error) => Some(error.to_string()),
+                };
+                let _ = sender.send(UiEvent::TapStopped { tap_id, error });
             });
         }
     }

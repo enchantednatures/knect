@@ -3,11 +3,14 @@
 use std::sync::Arc;
 
 use knect_proto::events::{GraphPatch, NodeUpdated};
+use knect_proto::graph::NodeCategory;
 use knect_proto::graph::{Health, ResourceNode};
 use knect_proto::rpc::DaemonStatus;
 use knect_proto::tap::{LogLine, TapEvent};
+use knect_proto::tap::{TapTarget, TapTargetKind};
 use knect_proto::{NodeDetails, ResourceId, SseEvent, SseEventKind, Topology};
 
+use crate::app::modal::{DiffModal, Modal, ModalKind, TapModal, TrafficModal};
 use crate::ui::graph::{GraphLayout, layout};
 use crate::ui::tree::{TreeRow, build_rows, selectable_indices};
 
@@ -207,6 +210,8 @@ pub struct AppState {
     pub tap_events: Vec<TapEvent>,
     /// Whether the tap pane is visible.
     pub tap_visible: bool,
+    /// Active modal, if any.
+    pub modal: Modal,
     /// Connection state.
     pub connection: ConnectionStatus,
     /// Latest daemon status.
@@ -399,6 +404,9 @@ impl AppState {
                 self.dirty = true;
             }
             SseEventKind::TapEvent { data } => {
+                if let Modal::Tap(modal) = &mut self.modal {
+                    modal.push_event(data.clone());
+                }
                 self.tap_events.push(data);
                 if self.tap_events.len() > 500 {
                     let excess = self.tap_events.len() - 500;
@@ -546,6 +554,85 @@ impl AppState {
     #[must_use]
     pub fn selected_health(&self) -> Option<Health> {
         self.selected_node().map(|node| node.health)
+    }
+
+    /// Active modal kind.
+    #[must_use]
+    pub const fn modal_kind(&self) -> ModalKind {
+        self.modal.kind()
+    }
+
+    /// Opens the mutation diff modal for the selection.
+    pub fn open_diff(&mut self) -> bool {
+        let Some(id) = self.selected.clone() else {
+            self.set_status("select a resource before opening its mutation diff");
+            return false;
+        };
+        self.modal = Modal::Diff(DiffModal::loading(id));
+        self.mark_dirty();
+        true
+    }
+
+    /// Opens the traffic editor for the selected Knative Service.
+    pub fn open_traffic(&mut self) -> bool {
+        let Some(id) = self.selected.clone() else {
+            self.set_status("select a Knative Service before editing traffic");
+            return false;
+        };
+        let modal = match self.topology.as_ref() {
+            Some(topology) => TrafficModal::from_topology(topology, &id),
+            None => {
+                self.set_status("topology is not loaded yet");
+                return false;
+            }
+        };
+        self.modal = Modal::Traffic(modal);
+        self.mark_dirty();
+        true
+    }
+
+    /// Opens the CloudEvent tap modal for the selected Broker or Trigger.
+    pub fn open_tap(&mut self) -> bool {
+        let Some(node) = self.selected_node() else {
+            self.set_status("select a Broker or Trigger before opening the tap");
+            return false;
+        };
+        let kind = match node.category {
+            NodeCategory::Broker => TapTargetKind::Broker,
+            NodeCategory::Trigger => TapTargetKind::Trigger,
+            _ => {
+                self.set_status("tap requires a Broker or Trigger selection");
+                return false;
+            }
+        };
+        let Some(namespace) = node.namespace.clone() else {
+            self.set_status("tap requires a namespaced Broker or Trigger");
+            return false;
+        };
+        self.modal = Modal::Tap(TapModal::starting(TapTarget {
+            kind,
+            namespace,
+            name: node.name.clone(),
+        }));
+        self.mark_dirty();
+        true
+    }
+
+    /// Closes the active modal.
+    pub fn close_modal(&mut self) {
+        self.modal = Modal::None;
+        self.mark_dirty();
+    }
+
+    /// Reloads the traffic editor from the current topology.
+    pub fn refresh_traffic(&mut self) {
+        let Some(topology) = self.topology.as_ref() else {
+            return;
+        };
+        if let Modal::Traffic(modal) = &mut self.modal {
+            modal.refresh(topology);
+            self.mark_dirty();
+        }
     }
 
     /// Cycles the active pane.

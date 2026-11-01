@@ -4,13 +4,15 @@ pub mod diff;
 pub mod graph;
 pub mod install;
 pub mod k9s;
+pub mod kind;
 pub mod tap;
+pub mod target;
 
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 
-use crate::client::{ClientError, resolve_endpoint};
+use crate::client::ClientError;
 
 /// Root CLI.
 #[derive(Debug, Clone, Parser)]
@@ -53,26 +55,40 @@ pub enum Command {
 /// Typed CLI failure.
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
-    /// The subcommand exists but its implementation lands in a later task.
-    #[error("{0} is not implemented yet")]
-    NotImplemented(&'static str),
-    /// Endpoint resolution failed.
+    /// Invalid input or request.
+    #[error("{0}")]
+    Message(String),
+    /// The resource was not found.
+    #[error("resource not found: {0}")]
+    NotFound(String),
+    /// The resource argument matched more than one node.
+    #[error("ambiguous resource: {0}")]
+    Ambiguous(String),
+    /// Endpoint resolution or transport failed.
     #[error(transparent)]
     Client(#[from] ClientError),
+    /// File access failed.
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+/// Encodes a deterministic pretty JSON document.
+pub fn json_text<T: serde::Serialize>(value: &T) -> Result<String, CliError> {
+    serde_json::to_string_pretty(value)
+        .map_err(|error| CliError::Message(format!("cannot encode JSON: {error}")))
 }
 
 /// Dispatches a parsed subcommand.
-pub fn run(
+pub async fn run(
     command: Command,
     socket: Option<&Path>,
     daemon_url: Option<&str>,
 ) -> Result<(), CliError> {
-    let _endpoint = resolve_endpoint(socket, daemon_url)?;
     match command {
-        Command::Graph(args) => graph::run(args),
-        Command::Diff(args) => diff::run(args),
-        Command::Tap(args) => tap::run(args),
-        Command::InstallK9sPlugin(args) => k9s::run(args),
+        Command::Graph(args) => graph::run(args, socket, daemon_url).await,
+        Command::Diff(args) => diff::run(args, socket, daemon_url).await,
+        Command::Tap(args) => tap::run(args, socket, daemon_url).await,
+        Command::InstallK9sPlugin(args) => k9s::run(args, socket),
     }
 }
 
@@ -98,6 +114,7 @@ mod tests {
             "/tmp/test.sock",
             "install-k9s-plugin",
             "--force",
+            "--dry-run",
         ])
         .expect("parse install");
         assert!(matches!(cli.command, Some(Command::InstallK9sPlugin(_))));
@@ -105,30 +122,34 @@ mod tests {
     }
 
     #[test]
-    fn stubs_return_typed_not_implemented() {
-        for command in [
-            Command::Graph(graph::GraphArgs {
-                json: false,
-                resource: None,
-                namespace: None,
-            }),
-            Command::Diff(diff::DiffArgs {
-                resource: None,
-                mode: diff::DiffModeCli::ThreeWay,
-            }),
-            Command::Tap(tap::TapArgs {
-                target: None,
-                follow: false,
-            }),
-            Command::InstallK9sPlugin(k9s::InstallK9sPluginArgs {
-                dir: None,
-                force: false,
-            }),
-        ] {
-            match run(command, None, None) {
-                Err(CliError::NotImplemented(_)) => {}
-                other => panic!("unexpected result: {other:?}"),
+    fn parses_focused_diff_and_tap_flags() {
+        let cli = Cli::try_parse_from([
+            "knect",
+            "diff",
+            "ksvc/hello",
+            "-n",
+            "default",
+            "--json",
+            "--mode",
+            "managers",
+        ])
+        .expect("parse diff");
+        match cli.command {
+            Some(Command::Diff(args)) => {
+                assert_eq!(args.namespace.as_deref(), Some("default"));
+                assert!(args.json);
+                assert_eq!(args.mode, diff::DiffModeCli::Managers);
             }
+            other => panic!("unexpected command: {other:?}"),
+        }
+        let cli = Cli::try_parse_from(["knect", "tap", "broker/orders", "-n", "default", "--list"])
+            .expect("parse tap");
+        match cli.command {
+            Some(Command::Tap(args)) => {
+                assert!(args.list);
+                assert_eq!(args.namespace.as_deref(), Some("default"));
+            }
+            other => panic!("unexpected command: {other:?}"),
         }
     }
 }
