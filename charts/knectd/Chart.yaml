@@ -1,0 +1,20 @@
+apiVersion: v2
+name: knectd
+description: Read-only Knative topology observer with an embedded WebUI
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.28.0-0"
+home: https://github.com/enchantednatures/knect
+sources:
+  - https://github.com/enchantednatures/knect
+keywords:
+  - knative
+  - kubernetes
+  - observability
+  - topology
+maintainers:
+  - name: Hunter Casten
+    url: https://github.com/enchantednatures
+annotations:
+  category: Observability

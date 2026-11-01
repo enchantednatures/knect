@@ -1,0 +1,22 @@
+{{- if and .Values.cache.persistence.enabled (not .Values.cache.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "knectd.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "knectd.labels" . | nindent 4 }}
+  {{- with .Values.cache.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.cache.persistence.accessModes | nindent 4 }}
+  {{- with .Values.cache.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.cache.persistence.size }}
+{{- end }}

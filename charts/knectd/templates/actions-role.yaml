@@ -1,0 +1,66 @@
+{{- if and .Values.actions.enabled .Values.actions.role.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "knectd.actionsRoleName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "knectd.labels" . | nindent 4 }}
+rules:
+  # Traffic splitting and server-side dry-run validation for Knative objects.
+  - apiGroups:
+      - serving.knative.dev
+    resources:
+      - configurations
+      - domainmappings
+      - revisions
+      - routes
+      - services
+    verbs:
+      - get
+      - create
+      - patch
+  - apiGroups:
+      - eventing.knative.dev
+      - sources.knative.dev
+      - messaging.knative.dev
+    resources:
+      - apiserversources
+      - brokers
+      - channels
+      - containersources
+      - eventtypes
+      - inmemorychannels
+      - parallels
+      - pingsources
+      - sequences
+      - sinkbindings
+      - subscriptions
+      - triggers
+    verbs:
+      - get
+      - create
+      - patch
+      - delete
+  # Dry-run validation for common core objects.
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - services
+    verbs:
+      - get
+      - create
+      - patch
+  # Flagger promote/abort control.
+  - apiGroups:
+      - flagger.app
+    resources:
+      - canaries
+    verbs:
+      - get
+      - patch
+  {{- with .Values.actions.extraRules }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

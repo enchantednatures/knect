@@ -1,0 +1,346 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "knectd.clusterRoleName" . }}
+  labels:
+    {{- include "knectd.labels" . | nindent 4 }}
+rules:
+  # Core API. Secrets are deliberately excluded unless rbac.readSecrets is set.
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - endpoints
+      - events
+      - limitranges
+      - namespaces
+      - nodes
+      - persistentvolumeclaims
+      - persistentvolumes
+      - pods
+      - replicationcontrollers
+      - resourcequotas
+      - serviceaccounts
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
+  {{- if .Values.rbac.readSecrets }}
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  {{- end }}
+  - apiGroups:
+      - apps
+    resources:
+      - daemonsets
+      - deployments
+      - replicasets
+      - statefulsets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - batch
+    resources:
+      - cronjobs
+      - jobs
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - ingressclasses
+      - ingresses
+      - networkpolicies
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - autoscaling
+    resources:
+      - horizontalpodautoscalers
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - serving.knative.dev
+    resources:
+      - configurations
+      - domainmappings
+      - revisions
+      - routes
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - eventing.knative.dev
+    resources:
+      - brokers
+      - eventtypes
+      - kafkabrokers
+      - kafkasinks
+      - rabbitmqbrokerconfigs
+      - rabbitmqbrokers
+      - triggers
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - sources.knative.dev
+    resources:
+      - apiserversources
+      - camelsources
+      - containersources
+      - githubsources
+      - gitsources
+      - helloworldsources
+      - kafkasources
+      - pingsources
+      - prometheussources
+      - rabbitmqsources
+      - redissources
+      - sinkbindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - messaging.knative.dev
+    resources:
+      - channels
+      - inmemorychannels
+      - kafkachannels
+      - natsschannels
+      - parallels
+      - rabbitmqchannels
+      - redischannels
+      - sequences
+      - subscriptions
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - networking.istio.io
+    resources:
+      - destinationrules
+      - envoyfilters
+      - gateways
+      - proxyconfigs
+      - serviceentries
+      - sidecars
+      - telemetries
+      - virtualservices
+      - workloadentries
+      - workloadgroups
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - security.istio.io
+    resources:
+      - authorizationpolicies
+      - peerauthentications
+      - requestauthentications
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - kyverno.io
+    resources:
+      - clusterpolicies
+      - policies
+      - policyexceptions
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - wgpolicyk8s.io
+    resources:
+      - clusterpolicyreports
+      - policyreports
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - flagger.app
+    resources:
+      - alertproviders
+      - canaries
+      - metrictemplates
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - kafka.strimzi.io
+    resources:
+      - kafkabridges
+      - kafkaconnectors
+      - kafkaconnects
+      - kafkamirrormakers
+      - kafkanodepools
+      - kafkarebalances
+      - kafkas
+      - kafkatopics
+      - kafkausers
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - cluster.redpanda.com
+    resources:
+      - redpandas
+      - schemas
+      - shadowlinks
+      - topics
+      - users
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - rabbitmq.com
+    resources:
+      - rabbitmqbrokerconfigs
+      - rabbitmqclusters
+      - rabbitmqpermissions
+      - rabbitmqpolicies
+      - rabbitmqqueues
+      - rabbitmqschemaparameters
+      - rabbitmqusers
+      - rabbitmqvhosts
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - dragonflydb.io
+    resources:
+      - dragonflies
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - redis.redis.opstreelabs.in
+    resources:
+      - redis
+      - redisclusters
+      - redisreplications
+      - redissentinels
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - postgresql.cnpg.io
+    resources:
+      - backups
+      - clusters
+      - poolers
+      - publications
+      - scheduledbackups
+      - subscriptions
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - storage.k8s.io
+    resources:
+      - csidrivers
+      - csinodes
+      - csistoragecapacities
+      - storageclasses
+      - volumeattachments
+      - volumeattributesclasses
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ceph.rook.io
+    resources:
+      - cephblockpools
+      - cephblockpoolradosnamespaces
+      - cephbuckettopics
+      - cephclusters
+      - cephfilesystems
+      - cephfilesystemsubvolumegroups
+      - cephobjectstores
+      - cephobjectstoreusers
+      - cephtopics
+    verbs:
+      - get
+      - list
+      - watch
+  # Operator control planes (Knative Operator and OLM).
+  - apiGroups:
+      - operator.knative.dev
+    resources:
+      - knativeeventings
+      - knativeservings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - operators.coreos.com
+    resources:
+      - catalogsources
+      - clusterserviceversions
+      - installplans
+      - operatorgroups
+      - subscriptions
+    verbs:
+      - get
+      - list
+      - watch
+  {{- with .Values.rbac.extraRules }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,24 @@
+# Build context exclusions. Keep this list narrow: the Rust build needs
+# Cargo.lock, rust-toolchain.toml, every workspace crate, and the WebUI source.
+.git
+.gitignore
+.github
+.omo
+artifacts
+target
+node_modules
+webui/node_modules
+webui/dist
+webui/.vite
+webui/playwright-report
+webui/test-results
+charts
+docs
+hack
+nvim
+testdata
+**/*.redb
+**/*.redb.lock
+*.kubeconfig
+.env
+.DS_Store

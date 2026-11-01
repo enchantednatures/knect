@@ -1,0 +1,23 @@
+{{- if and .Values.tap.enabled .Values.tap.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-tap" (include "knectd.fullname" .) | trunc 63 | trimSuffix "-" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "knectd.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tap
+  {{- with .Values.tap.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.tap.service.type }}
+  ports:
+    - name: tap
+      port: {{ .Values.tap.port }}
+      targetPort: tap
+      protocol: TCP
+  selector:
+    {{- include "knectd.selectorLabels" . | nindent 4 }}
+{{- end }}
