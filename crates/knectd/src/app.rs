@@ -106,6 +106,20 @@ impl AppState {
         self
     }
 
+    /// Replaces the guarded action executor.
+    #[must_use]
+    pub fn with_actions(mut self, actions: Arc<dyn ActionExecutor>) -> Self {
+        self.actions = actions;
+        self
+    }
+
+    /// Replaces the CloudEvent tap manager.
+    #[must_use]
+    pub fn with_tap(mut self, tap: Arc<dyn TapManager>) -> Self {
+        self.tap = tap;
+        self
+    }
+
     /// Replaces the in-memory Secret registry.
     #[must_use]
     pub fn with_secret_material(mut self, registry: Arc<SecretMaterialRegistry>) -> Self {

@@ -29,6 +29,12 @@ use serde_json::Value;
 pub mod daemon;
 pub mod graph;
 
+mod actions;
+mod logs;
+mod mutations;
+mod tap;
+mod validate;
+
 use crate::app::AppState;
 
 /// Dispatches protocol requests against shared daemon state.
@@ -105,40 +111,42 @@ impl RpcDispatcher {
                 encode(daemon::refresh(&self.state))
             }
             methods::MUTATIONS_GET_DIFF => {
-                let _: GetDiffParams = required_params(request)?;
-                Err(pending("Task 9", &request.method))
+                let params: GetDiffParams = required_params(request)?;
+                encode(mutations::get_diff(&self.state, params).await?)
             }
             methods::ACTIONS_SET_TRAFFIC_SPLIT => {
-                let _: SetTrafficSplitParams = required_params(request)?;
-                self.actions_guard(&request.method)
+                let params: SetTrafficSplitParams = required_params(request)?;
+                self.actions_guard(&request.method)?;
+                encode(actions::set_traffic_split(&self.state, params).await?)
             }
             methods::ACTIONS_FLAGGER_CONTROL => {
-                let _: FlaggerControlParams = required_params(request)?;
-                self.actions_guard(&request.method)
+                let params: FlaggerControlParams = required_params(request)?;
+                self.actions_guard(&request.method)?;
+                encode(actions::flagger_control(&self.state, params).await?)
             }
             methods::POLICY_VALIDATE_MANIFEST => {
-                let _: ValidateManifestParams = required_params(request)?;
-                Err(pending("Task 11", &request.method))
+                let params: ValidateManifestParams = required_params(request)?;
+                encode(validate::validate_manifest(&self.state, params).await?)
             }
             methods::TAP_START => {
-                let _: TapStartParams = required_params(request)?;
-                Err(pending("Task 12", &request.method))
+                let params: TapStartParams = required_params(request)?;
+                encode(tap::start(&self.state, params).await?)
             }
             methods::TAP_STOP => {
-                let _: TapStopParams = required_params(request)?;
-                Err(pending("Task 12", &request.method))
+                let params: TapStopParams = required_params(request)?;
+                encode(tap::stop(&self.state, params).await?)
             }
             methods::TAP_LIST => {
                 let _: EmptyParams = params_or_default(request)?;
-                Err(pending("Task 12", &request.method))
+                encode(tap::list(&self.state).await?)
             }
             methods::LOGS_SUBSCRIBE => {
-                let _: LogsSubscribeParams = required_params(request)?;
-                Err(pending("Task 12", &request.method))
+                let params: LogsSubscribeParams = required_params(request)?;
+                encode(logs::subscribe(&self.state, params).await?)
             }
             methods::LOGS_STOP => {
-                let _: LogsStopParams = required_params(request)?;
-                Err(pending("Task 12", &request.method))
+                let params: LogsStopParams = required_params(request)?;
+                encode(logs::stop(&self.state, params).await?)
             }
             methods::EVENTS_SUBSCRIBE => {
                 let _: EventsSubscribeParams = params_or_default(request)?;
@@ -166,7 +174,7 @@ impl RpcDispatcher {
         }
     }
 
-    fn actions_guard(&self, method: &str) -> Result<Value, RpcError> {
+    fn actions_guard(&self, method: &str) -> Result<(), RpcError> {
         if !self.state.actions_enabled() {
             return Err(RpcError::with_data(
                 ACTIONS_DISABLED,
@@ -180,7 +188,7 @@ impl RpcDispatcher {
                 },
             ));
         }
-        Err(pending("Task 11", method))
+        Ok(())
     }
 }
 
@@ -212,18 +220,6 @@ fn required_params<T: DeserializeOwned>(request: &RpcRequest) -> Result<T, RpcEr
 
 fn invalid_params(error: serde_json::Error) -> RpcError {
     RpcError::new(INVALID_PARAMS, format!("invalid params: {error}"))
-}
-
-fn pending(task: &str, method: &str) -> RpcError {
-    RpcError::with_data(
-        INTERNAL_ERROR,
-        format!("{method} is not implemented in the foundation build"),
-        ErrorData {
-            retryable: false,
-            details: Some(format!("owned by {task}")),
-            resource: None,
-        },
-    )
 }
 
 #[cfg(test)]
@@ -508,11 +504,6 @@ mod tests {
         let error = response.error.expect("error");
         assert_eq!(error.code, INTERNAL_ERROR);
         assert!(error.message.contains("mutations.get_diff"));
-        assert!(
-            error
-                .data
-                .and_then(|data| data.details)
-                .is_some_and(|details| details.contains("Task 9"))
-        );
+        assert!(error.message.contains("Task 9"));
     }
 }
