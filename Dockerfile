@@ -28,16 +28,11 @@ ARG ZIG_VERSION
 ARG CARGO_ZIGBUILD_VERSION
 ARG TARGETARCH
 
-# zig supplies the cross C/C++ toolchain; cmake/nasm/perl are used by
-# aws-lc-sys (pulled in by rustls) when it compiles its bundled crypto library.
+# zig supplies the cross C/C++ toolchain; curl and xz fetch and unpack zig.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
-        cmake \
         curl \
-        nasm \
-        ninja-build \
-        perl \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 

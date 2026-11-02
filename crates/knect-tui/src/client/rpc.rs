@@ -32,6 +32,7 @@ impl RpcClientImpl {
     /// Creates a client for one endpoint.
     #[must_use]
     pub fn new(endpoint: Endpoint, timeout: Duration) -> Self {
+        crate::ensure_crypto_provider();
         let http = reqwest::Client::builder()
             .connect_timeout(timeout)
             .build()

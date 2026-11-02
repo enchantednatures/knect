@@ -12,3 +12,11 @@ pub mod client;
 pub mod ui;
 
 pub use cli::Cli;
+
+/// Installs the process-wide rustls provider.
+///
+/// The workspace builds reqwest with `rustls-no-provider`, so binaries and
+/// tests must install the ring provider before constructing a TLS client.
+pub fn ensure_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}

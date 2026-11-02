@@ -87,6 +87,7 @@ impl Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let args = Args::parse();
     let config = Config::load(args.config.as_deref(), args.overrides())
         .context("cannot load configuration")?;

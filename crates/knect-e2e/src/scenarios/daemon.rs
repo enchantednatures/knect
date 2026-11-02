@@ -14,6 +14,7 @@ use crate::scenarios::ScenarioError;
 
 /// Runs the daemon scenario against a real fixture daemon process.
 pub async fn run(_harness: &Harness) -> Result<(), ScenarioError> {
+    crate::ensure_crypto_provider();
     let fixture = repo_fixture_dir();
     let daemon = FixtureDaemon::spawn(&fixture).await?;
     let socket = daemon.socket().to_path_buf();

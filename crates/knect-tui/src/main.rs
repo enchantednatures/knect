@@ -5,6 +5,7 @@ use knect_tui::cli::{self, Cli};
 
 #[tokio::main]
 async fn main() {
+    knect_tui::ensure_crypto_provider();
     let cli = Cli::parse();
     match cli.command.clone() {
         None => {

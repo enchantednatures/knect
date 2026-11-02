@@ -12,6 +12,14 @@ pub mod scenarios;
 pub use harness::{Harness, HarnessError};
 pub use scenarios::{SCENARIOS, ScenarioError, run_all, run_scenario};
 
+/// Installs the process-wide rustls provider.
+///
+/// The workspace builds reqwest with `rustls-no-provider`, so binaries and
+/// tests must install the ring provider before constructing a TLS client.
+pub fn ensure_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 /// Top-level harness failure.
 #[derive(Debug, thiserror::Error)]
 pub enum E2eError {

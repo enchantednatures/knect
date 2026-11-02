@@ -68,6 +68,7 @@ impl Harness {
     /// Builds a harness. `daemon_url` wins over `socket`; the default socket is
     /// used when neither is supplied.
     pub fn new(daemon_url: Option<&str>, socket: Option<&Path>) -> Result<Self, HarnessError> {
+        crate::ensure_crypto_provider();
         if let Some(url) = daemon_url {
             let url = url.trim();
             if url.is_empty() {

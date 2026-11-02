@@ -195,6 +195,7 @@ pub async fn start_interactive_stub_daemon() -> StubServer {
 }
 
 pub async fn start_stub_daemon_with(topology: Topology) -> StubServer {
+    knect_tui::ensure_crypto_provider();
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind stub listener");

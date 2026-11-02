@@ -257,6 +257,7 @@ pub async fn is_reachable(endpoint: &Endpoint, timeout: Duration) -> bool {
                 .unwrap_or(false)
         }
         Endpoint::Http(base) => {
+            crate::ensure_crypto_provider();
             let Ok(client) = reqwest::Client::builder().connect_timeout(timeout).build() else {
                 return false;
             };
