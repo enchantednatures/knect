@@ -1,6 +1,7 @@
 # knect architecture and frozen interfaces
 
-Status: v1.0.0. The protocol in `docs/protocol.md` and `crates/knect-proto` is
+Status: v1.0.0 release candidate. The protocol in `docs/protocol.md` and
+`crates/knect-proto` is
 frozen. The daemon runtime, redb cache, discovery and watch supervisors,
 Serving/Eventing topology, service-link/operator/storage/policy/mutation
 attribution, Ratatui TUI, embedded SvelteFlow WebUI, `knect.nvim`, container,

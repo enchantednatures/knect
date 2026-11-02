@@ -94,9 +94,9 @@ intentional: guarded write actions require both
 
 ## Status
 
-`v1.0.0`. The daemon, cache, topology/correlation engines, TUI, WebUI,
-`knect.nvim`, container, Helm chart, and signed release pipeline are
-implemented and tested.
+Unreleased `v1.0.0` release candidate. The daemon, cache,
+topology/correlation engines, TUI, WebUI, `knect.nvim`, container, Helm chart,
+and signed release pipeline are implemented and tested.
 
 Known limitation: a cold full-stack Kind setup currently takes about **13
 minutes**, dominated by Knative install and readiness waits. The original

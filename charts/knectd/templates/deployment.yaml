@@ -89,6 +89,8 @@ spec:
               value: {{ .Values.tap.callbackBind | quote }}
             - name: KNECT_TAP_CALLBACK_HOST
               value: {{ .Values.tap.callbackHost | quote }}
+            - name: KNECT_DISCOVERY_SECRETS
+              value: {{ .Values.rbac.readSecrets | quote }}
             - name: KNECT_DAEMON_ALLOW_ACTIONS
               value: {{ .Values.actions.enabled | quote }}
             - name: KNECT_ACTIONS_ENABLED

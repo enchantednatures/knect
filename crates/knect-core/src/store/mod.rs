@@ -76,8 +76,10 @@ pub struct ResourceStore {
     objects: BTreeMap<ResourceId, Arc<DynamicObject>>,
     by_gvk: BTreeMap<Gvk, BTreeSet<ResourceId>>,
     by_namespace: BTreeMap<Option<String>, BTreeSet<ResourceId>>,
+    by_group_kind: BTreeMap<(String, String), BTreeSet<ResourceId>>,
     by_owner_uid: BTreeMap<String, BTreeSet<ResourceId>>,
     by_owner_ref: BTreeMap<OwnerRefKey, BTreeSet<ResourceId>>,
+    by_uid: BTreeMap<String, ResourceId>,
     generation: u64,
 }
 
@@ -195,6 +197,21 @@ impl ResourceStore {
             .unwrap_or_default()
     }
 
+    /// Identities for an API group and kind across versions.
+    #[must_use]
+    pub fn ids_by_group_kind(&self, group: &str, kind: &str) -> Vec<ResourceId> {
+        self.by_group_kind
+            .get(&(group.to_owned(), kind.to_owned()))
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Returns the identity carrying a Kubernetes UID.
+    #[must_use]
+    pub fn id_by_uid(&self, uid: &str) -> Option<ResourceId> {
+        self.by_uid.get(uid).cloned()
+    }
+
     /// Identities owned by a Kubernetes UID.
     #[must_use]
     pub fn ids_owned_by_uid(&self, uid: &str) -> Vec<ResourceId> {
@@ -224,11 +241,22 @@ impl ResourceStore {
     }
 
     fn index_insert(&mut self, id: &ResourceId, object: &DynamicObject) {
-        self.by_gvk.entry(id.gvk()).or_default().insert(id.clone());
+        let gvk = id.gvk();
+        self.by_gvk
+            .entry(gvk.clone())
+            .or_default()
+            .insert(id.clone());
+        self.by_group_kind
+            .entry((gvk.group, gvk.kind))
+            .or_default()
+            .insert(id.clone());
         self.by_namespace
             .entry(id.namespace.clone())
             .or_default()
             .insert(id.clone());
+        if let Some(uid) = object.metadata.uid.as_deref() {
+            self.by_uid.insert(uid.to_owned(), id.clone());
+        }
         for uid in owner_uids(object) {
             self.by_owner_uid.entry(uid).or_default().insert(id.clone());
         }
@@ -238,8 +266,17 @@ impl ResourceStore {
     }
 
     fn remove_indexes(&mut self, id: &ResourceId) {
-        remove_from_index(&mut self.by_gvk, &id.gvk(), id);
+        let gvk = id.gvk();
+        remove_from_index(&mut self.by_gvk, &gvk, id);
+        remove_from_index(&mut self.by_group_kind, &(gvk.group, gvk.kind), id);
         remove_from_index(&mut self.by_namespace, &id.namespace, id);
+        if let Some(uid) = self
+            .objects
+            .get(id)
+            .and_then(|object| object.metadata.uid.clone())
+        {
+            self.by_uid.remove(&uid);
+        }
         for uid in owner_uids_of(self, id) {
             remove_from_index(&mut self.by_owner_uid, &uid, id);
         }
@@ -376,6 +413,24 @@ mod tests {
                 "hello-00001"
             )]
         );
+        assert_eq!(
+            store.ids_by_group_kind("serving.knative.dev", "Revision"),
+            vec![ResourceId::namespaced(
+                "serving.knative.dev/v1",
+                "Revision",
+                "default",
+                "hello-00001"
+            )]
+        );
+        assert_eq!(
+            store.id_by_uid("uid-hello-00001"),
+            Some(ResourceId::namespaced(
+                "serving.knative.dev/v1",
+                "Revision",
+                "default",
+                "hello-00001"
+            ))
+        );
         assert_eq!(store.ids_in_namespace(Some("other")).len(), 1);
         assert_eq!(store.ids_owned_by_uid("uid-service").len(), 1);
         assert_eq!(
@@ -401,6 +456,12 @@ mod tests {
         );
         store.remove(&id);
         assert!(store.ids_by_gvk(&id.gvk()).is_empty());
+        assert!(
+            store
+                .ids_by_group_kind("serving.knative.dev", "Revision")
+                .is_empty()
+        );
+        assert!(store.id_by_uid("uid-hello-00001").is_none());
         assert!(store.ids_in_namespace(Some("default")).is_empty());
         assert!(store.ids_owned_by_uid("uid-service").is_empty());
     }

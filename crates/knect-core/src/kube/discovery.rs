@@ -60,6 +60,7 @@ pub fn filter_snapshot(snapshot: DiscoverySnapshot, config: &DiscoveryConfig) ->
     resources.retain(|resource| {
         (allow_all || group_is_allowed(&config.groups, &resource.gvk.group))
             && resource.supports_list_and_watch()
+            && (config.secrets || !is_secret(&resource.gvk))
     });
     resources.sort_by(compare_resources);
     resources.dedup_by(|left, right| left.gvk == right.gvk);
@@ -91,6 +92,10 @@ pub fn find<'a>(snapshot: &'a DiscoverySnapshot, gvk: &Gvk) -> Option<&'a Discov
 
 fn group_is_allowed(groups: &[String], group: &str) -> bool {
     groups.iter().any(|allowed| allowed == group)
+}
+
+fn is_secret(gvk: &Gvk) -> bool {
+    gvk.group.is_empty() && gvk.kind == "Secret"
 }
 
 fn compare_resources(left: &DiscoveredResource, right: &DiscoveredResource) -> std::cmp::Ordering {
@@ -140,6 +145,28 @@ mod tests {
         assert_eq!(filtered.resources.len(), 1);
         assert_eq!(filtered.resources[0].gvk.group, "eventing.knative.dev");
         assert!(filtered.warnings.is_empty());
+    }
+
+    #[test]
+    fn core_secrets_are_excluded_unless_explicitly_enabled() {
+        let input = snapshot(vec![
+            resource("", "v1", "Pod", &["list", "watch"]),
+            resource("", "v1", "Secret", &["list", "watch"]),
+        ]);
+        let filtered = filter_snapshot(input.clone(), &config(&[""]));
+        assert_eq!(filtered.resources.len(), 1);
+        assert_eq!(filtered.resources[0].gvk.kind, "Pod");
+
+        let mut secret_config = config(&[""]);
+        secret_config.secrets = true;
+        let filtered = filter_snapshot(input, &secret_config);
+        assert_eq!(filtered.resources.len(), 2);
+        assert!(
+            filtered
+                .resources
+                .iter()
+                .any(|resource| resource.gvk.kind == "Secret")
+        );
     }
 
     #[test]

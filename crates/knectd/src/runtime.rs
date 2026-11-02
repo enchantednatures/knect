@@ -20,8 +20,9 @@ use knect_core::kube::{
 };
 use knect_core::store::{ResourceStore, resource_id};
 use knect_core::{CoreError, SnapshotCache};
-use knect_proto::Gvk;
 use knect_proto::rpc::WatcherStatus;
+use knect_proto::{Gvk, ResourceId};
+use kube::api::DynamicObject;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -68,6 +69,7 @@ pub struct Runtime {
     discovery: Mutex<Option<DiscoveryManager>>,
     updates: Mutex<Option<(mpsc::Sender<WatchUpdate>, mpsc::Receiver<WatchUpdate>)>>,
     watched: Mutex<BTreeMap<Gvk, WatcherHealth>>,
+    relist: Mutex<BTreeMap<Gvk, BTreeSet<ResourceId>>>,
     sanitizer: Sanitizer,
     pipeline: CorrelationPipeline,
     engine: Mutex<GraphEngine>,
@@ -91,6 +93,7 @@ impl Runtime {
             discovery: Mutex::new(None),
             updates: Mutex::new(None),
             watched: Mutex::new(BTreeMap::new()),
+            relist: Mutex::new(BTreeMap::new()),
             sanitizer,
             pipeline: CorrelationPipeline::default(),
             engine: Mutex::new(engine),
@@ -322,23 +325,20 @@ impl Runtime {
 
     async fn ingest(&self, update: WatchUpdate) -> IngestOutcome {
         match update {
-            WatchUpdate::InitApply { gvk, object, .. } | WatchUpdate::Apply { gvk, object, .. } => {
-                let sanitized = self.sanitizer.sanitize(object);
-                let id = resource_id(&sanitized.object);
-                if sanitized.secret_material.is_empty() {
-                    self.state.secret_material.remove(&id);
-                } else {
-                    self.state
-                        .secret_material
-                        .insert(id, sanitized.secret_material);
-                }
-                self.state.store.write().await.upsert(sanitized.object);
+            WatchUpdate::Init { gvk } => {
+                lock(&self.relist).insert(gvk.clone(), BTreeSet::new());
                 self.mark_watcher(&gvk, true);
-                IngestOutcome {
-                    changed: true,
-                    needs_rediscovery: false,
-                }
+                IngestOutcome::default()
             }
+            WatchUpdate::InitApply {
+                gvk, id, object, ..
+            } => {
+                if let Some(seen) = lock(&self.relist).get_mut(&gvk) {
+                    seen.insert(id);
+                }
+                self.store_object(gvk, object).await
+            }
+            WatchUpdate::Apply { gvk, object, .. } => self.store_object(gvk, object).await,
             WatchUpdate::Delete { gvk, id, .. } => {
                 self.state.store.write().await.remove(&id);
                 self.state.secret_material.remove(&id);
@@ -348,10 +348,7 @@ impl Runtime {
                     needs_rediscovery: false,
                 }
             }
-            WatchUpdate::Init { gvk } | WatchUpdate::InitDone { gvk } => {
-                self.mark_watcher(&gvk, true);
-                IngestOutcome::default()
-            }
+            WatchUpdate::InitDone { gvk } => self.finish_relist(gvk).await,
             WatchUpdate::Retry {
                 gvk,
                 attempt,
@@ -363,9 +360,10 @@ impl Runtime {
             }
             WatchUpdate::ResourceGone { gvk, message } => {
                 tracing::warn!(%gvk, %message, "watched resource disappeared; rediscovering");
+                let changed = self.forget_gvk(&gvk).await;
                 self.forget_watcher(&gvk);
                 IngestOutcome {
-                    changed: false,
+                    changed,
                     needs_rediscovery: true,
                 }
             }
@@ -378,6 +376,73 @@ impl Runtime {
                 }
             }
         }
+    }
+
+    async fn store_object(&self, gvk: Gvk, object: DynamicObject) -> IngestOutcome {
+        let sanitized = self.sanitizer.sanitize(object);
+        let id = resource_id(&sanitized.object);
+        if sanitized.secret_material.is_empty() {
+            self.state.secret_material.remove(&id);
+        } else {
+            self.state
+                .secret_material
+                .insert(id, sanitized.secret_material);
+        }
+        self.state.store.write().await.upsert(sanitized.object);
+        self.mark_watcher(&gvk, true);
+        IngestOutcome {
+            changed: true,
+            needs_rediscovery: false,
+        }
+    }
+
+    /// Drops objects of `gvk` that were not part of the completed initial list.
+    ///
+    /// A watcher re-lists after a reconnect. Deletes that happened while it was
+    /// disconnected are not replayed, so without this reconciliation the store
+    /// (and therefore every topology recompute) grows without bound.
+    async fn finish_relist(&self, gvk: Gvk) -> IngestOutcome {
+        let mut changed = false;
+        let seen = lock(&self.relist).remove(&gvk);
+        if let Some(seen) = seen {
+            let stale: Vec<ResourceId> = {
+                let store = self.state.store.read().await;
+                store
+                    .ids_by_gvk(&gvk)
+                    .into_iter()
+                    .filter(|id| !seen.contains(id))
+                    .collect()
+            };
+            if !stale.is_empty() {
+                let mut store = self.state.store.write().await;
+                for id in stale {
+                    if store.remove(&id).is_some() {
+                        self.state.secret_material.remove(&id);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        self.mark_watcher(&gvk, true);
+        IngestOutcome {
+            changed,
+            needs_rediscovery: false,
+        }
+    }
+
+    /// Removes every stored object for a resource endpoint that disappeared.
+    async fn forget_gvk(&self, gvk: &Gvk) -> bool {
+        lock(&self.relist).remove(gvk);
+        let stale = self.state.store.read().await.ids_by_gvk(gvk);
+        if stale.is_empty() {
+            return false;
+        }
+        let mut store = self.state.store.write().await;
+        for id in stale {
+            store.remove(&id);
+            self.state.secret_material.remove(&id);
+        }
+        true
     }
 
     async fn recompute(&self, publish: bool) -> Result<(), DaemonError> {
@@ -393,19 +458,21 @@ impl Runtime {
             Arc::new(store),
             self.state.secret_material(),
         );
-        let mut builder = GraphBuilder::new(&context).with_generation(generation);
-
-        if let Err(error) = self.pipeline.run(&ctx, &mut builder) {
-            tracing::warn!(%error, "correlation pipeline failed; keeping previous topology");
-            return Ok(());
-        }
-        let topology = {
+        let build = || {
+            let mut builder = GraphBuilder::new(&context).with_generation(generation);
+            if let Err(error) = self.pipeline.run(&ctx, &mut builder) {
+                tracing::warn!(%error, "correlation pipeline failed; keeping previous topology");
+                return None;
+            }
             let mut engine = lock(&self.engine);
             if let Err(error) = engine.apply(builder) {
                 tracing::warn!(%error, "graph engine rejected the projection");
-                return Ok(());
+                return None;
             }
-            engine.topology()
+            Some(engine.topology())
+        };
+        let Some(topology) = run_cpu_bound(build) else {
+            return Ok(());
         };
 
         if publish {
@@ -545,6 +612,21 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     match mutex.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// Runs CPU-bound graph work without starving the runtime's I/O driver.
+///
+/// `block_in_place` hands the worker's other tasks to a replacement thread, so
+/// the HTTP listener keeps accepting requests while a large cluster is being
+/// recomputed. Current-thread runtimes (used by tests) run the work inline.
+fn run_cpu_bound<T>(work: impl FnOnce() -> T) -> T {
+    let multi_thread = tokio::runtime::Handle::try_current()
+        .is_ok_and(|handle| handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
+    if multi_thread {
+        tokio::task::block_in_place(work)
+    } else {
+        work()
     }
 }
 
@@ -775,5 +857,97 @@ mod tests {
         assert!(outcome.changed);
         assert!(state.store.read().await.get(&id).is_none());
         assert!(state.secret_material.get(&id).is_none());
+    }
+
+    fn config_map(name: &str) -> DynamicObject {
+        DynamicObject::new(
+            name,
+            &kube::api::ApiResource {
+                group: String::new(),
+                version: "v1".to_owned(),
+                api_version: "v1".to_owned(),
+                kind: "ConfigMap".to_owned(),
+                plural: "configmaps".to_owned(),
+            },
+        )
+    }
+
+    async fn ingest_initial_list(runtime: &Runtime, gvk: &Gvk, objects: &[DynamicObject]) {
+        runtime.ingest(WatchUpdate::Init { gvk: gvk.clone() }).await;
+        for object in objects {
+            runtime
+                .ingest(WatchUpdate::InitApply {
+                    gvk: gvk.clone(),
+                    id: resource_id(object),
+                    object: object.clone(),
+                })
+                .await;
+        }
+        runtime
+            .ingest(WatchUpdate::InitDone { gvk: gvk.clone() })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn relist_drops_objects_deleted_while_the_watcher_was_disconnected() {
+        let state = AppState::new(Config::default(), false);
+        let runtime = Runtime::new(
+            state.clone(),
+            FixtureMode::Disabled,
+            CancellationToken::new(),
+        );
+        let gvk = Gvk::new("", "v1", "ConfigMap");
+        let keep = config_map("keep");
+        let gone = config_map("gone");
+        let keep_id = resource_id(&keep);
+        let gone_id = resource_id(&gone);
+
+        ingest_initial_list(&runtime, &gvk, &[keep.clone(), gone.clone()]).await;
+        assert!(state.store.read().await.get(&keep_id).is_some());
+        assert!(state.store.read().await.get(&gone_id).is_some());
+
+        // The reconnect's initial list no longer contains `gone`; deletes from
+        // the disconnected window are not replayed.
+        let outcome = {
+            runtime.ingest(WatchUpdate::Init { gvk: gvk.clone() }).await;
+            runtime
+                .ingest(WatchUpdate::InitApply {
+                    gvk: gvk.clone(),
+                    id: keep_id.clone(),
+                    object: keep,
+                })
+                .await;
+            runtime
+                .ingest(WatchUpdate::InitDone { gvk: gvk.clone() })
+                .await
+        };
+
+        assert!(outcome.changed);
+        assert!(state.store.read().await.get(&keep_id).is_some());
+        assert!(state.store.read().await.get(&gone_id).is_none());
+    }
+
+    #[tokio::test]
+    async fn resource_gone_removes_every_object_for_the_gvk() {
+        let state = AppState::new(Config::default(), false);
+        let runtime = Runtime::new(
+            state.clone(),
+            FixtureMode::Disabled,
+            CancellationToken::new(),
+        );
+        let gvk = Gvk::new("", "v1", "ConfigMap");
+        let objects = [config_map("one"), config_map("two")];
+        ingest_initial_list(&runtime, &gvk, &objects).await;
+
+        let outcome = runtime
+            .ingest(WatchUpdate::ResourceGone {
+                gvk: gvk.clone(),
+                message: "404 not found".to_owned(),
+            })
+            .await;
+
+        assert!(outcome.changed);
+        assert!(outcome.needs_rediscovery);
+        assert!(state.store.read().await.ids_by_gvk(&gvk).is_empty());
     }
 }

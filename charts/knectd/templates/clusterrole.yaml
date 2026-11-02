@@ -98,6 +98,15 @@ rules:
       - list
       - watch
   - apiGroups:
+      - autoscaling.internal.knative.dev
+    resources:
+      - metrics
+      - podautoscalers
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - serving.knative.dev
     resources:
       - configurations

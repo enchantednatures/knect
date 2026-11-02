@@ -18,7 +18,14 @@ use knect_proto::rpc::{
 };
 
 /// Default API groups watched by the daemon.
+///
+/// The empty string is the core API group. Core and `apps` resources are
+/// required to complete the Serving owner chain (Pod/Service/Endpoints) and
+/// the storage and policy correlators (PVC/PV/Pod).
 pub const DEFAULT_DISCOVERY_GROUPS: &[&str] = &[
+    "",
+    "apps",
+    "autoscaling.internal.knative.dev",
     "serving.knative.dev",
     "eventing.knative.dev",
     "sources.knative.dev",
@@ -112,6 +119,9 @@ pub struct DiscoveryConfig {
     pub groups: Vec<String>,
     /// Namespaces watched. Empty means all namespaces.
     pub namespaces: Vec<String>,
+    /// Watch core `Secret` objects. Disabled by default so the observer never
+    /// reads Secret material unless the operator opts in.
+    pub secrets: bool,
 }
 
 impl Default for DiscoveryConfig {
@@ -123,6 +133,7 @@ impl Default for DiscoveryConfig {
                 .map(|group| (*group).to_owned())
                 .collect(),
             namespaces: Vec::new(),
+            secrets: false,
         }
     }
 }
@@ -360,6 +371,9 @@ impl Config {
         if let Some(value) = env.get("KNECT_DISCOVERY_REDISCOVER_SECS") {
             self.discovery.rediscover_secs = parse_u64("KNECT_DISCOVERY_REDISCOVER_SECS", &value)?;
         }
+        if let Some(value) = env.get("KNECT_DISCOVERY_SECRETS") {
+            self.discovery.secrets = parse_bool("KNECT_DISCOVERY_SECRETS", &value)?;
+        }
         if let Some(value) = env.get("KNECT_WATCH_DEBOUNCE_MS") {
             self.watch.debounce_ms = parse_u64("KNECT_WATCH_DEBOUNCE_MS", &value)?;
         }
@@ -552,7 +566,10 @@ mod tests {
 
     #[test]
     fn defaults_match_the_plan() {
-        let config = Config::load_with_env(None, ConfigOverrides::default(), &empty_env())
+        // Use an explicit empty file so a developer's real
+        // ~/.config/knect/config.toml cannot change the assertion.
+        let (_dir, path) = file("");
+        let config = Config::load_with_env(Some(&path), ConfigOverrides::default(), &empty_env())
             .expect("defaults load");
         assert_eq!(config.daemon.socket_path, "/tmp/knectd.sock");
         assert_eq!(config.daemon.http_addr, "127.0.0.1:7420");
@@ -567,6 +584,9 @@ mod tests {
             config.discovery.groups.len(),
             DEFAULT_DISCOVERY_GROUPS.len()
         );
+        assert!(config.discovery.groups.iter().any(String::is_empty));
+        assert!(config.discovery.groups.iter().any(|group| group == "apps"));
+        assert!(!config.discovery.secrets);
         assert_eq!(config.watch.debounce_ms, 150);
         assert_eq!(config.watch.max_objects, 20_000);
         assert!(config.cache.enabled);
@@ -625,6 +645,7 @@ log = "warn"
         env.insert("KNECT_DAEMON_CONTEXT".to_owned(), "from-env".to_owned());
         env.insert("KNECT_LOG".to_owned(), "error".to_owned());
         env.insert("KNECT_TAP_CALLBACK_HOST".to_owned(), "env-host".to_owned());
+        env.insert("KNECT_DISCOVERY_SECRETS".to_owned(), "true".to_owned());
 
         let overrides = ConfigOverrides {
             context: Some("from-cli".to_owned()),
@@ -637,6 +658,7 @@ log = "warn"
         assert_eq!(config.daemon.log, "error");
         assert_eq!(config.daemon.socket_path, "/tmp/cli.sock");
         assert_eq!(config.tap.callback_host, "env-host");
+        assert!(config.discovery.secrets);
     }
 
     #[test]
@@ -702,8 +724,9 @@ bogus = true
 
     #[test]
     fn safe_config_never_contains_reader_inputs() {
+        let (_dir, path) = file("");
         let config = Config::load_with_env(
-            None,
+            Some(&path),
             ConfigOverrides {
                 context: Some("safe-context".to_owned()),
                 kubeconfig: Some(PathBuf::from("/home/test/.kube/config")),

@@ -32,11 +32,7 @@ pub const SERVING_API: &str = "serving.knative.dev/v1";
 /// Returns every identity in a group/kind pair across API versions.
 #[must_use]
 pub fn ids_by_group_kind(store: &ResourceStore, group: &str, kind: &str) -> Vec<ResourceId> {
-    store
-        .ids()
-        .filter(|id| id.kind == kind && id.gvk().group == group)
-        .cloned()
-        .collect()
+    store.ids_by_group_kind(group, kind)
 }
 
 /// Returns every identity for a kind regardless of API group.

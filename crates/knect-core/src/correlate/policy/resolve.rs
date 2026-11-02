@@ -31,9 +31,7 @@ pub fn scope_id(
 /// Finds a stored object by Kubernetes UID.
 #[must_use]
 pub fn find_by_uid(store: &ResourceStore, uid: &str) -> Option<ResourceId> {
-    store
-        .iter()
-        .find_map(|(id, object)| (object.uid().as_deref() == Some(uid)).then(|| id.clone()))
+    store.id_by_uid(uid)
 }
 
 /// Walks UIDs, owner references, labels, and name prefixes to the owning

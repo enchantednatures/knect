@@ -27,6 +27,9 @@ allow_remote = false
 [discovery]
 rediscover_secs = 60
 groups = [
+  "",
+  "apps",
+  "autoscaling.internal.knative.dev",
   "serving.knative.dev",
   "eventing.knative.dev",
   "sources.knative.dev",
@@ -46,6 +49,8 @@ groups = [
   "ceph.rook.io",
 ]
 namespaces = []
+# Core Secrets are skipped unless this is true and RBAC grants Secret reads.
+secrets = false
 
 [watch]
 debounce_ms = 150
@@ -91,6 +96,7 @@ enabled = false
 | `KNECT_LOG` / `KNECT_LOG_FORMAT` | Tracing filter and `human`/`json` format |
 | `KNECT_CACHE_ENABLED` | Enable persistent snapshots |
 | `KNECT_CACHE_FLUSH_MS` | Cache flush interval |
+| `KNECT_DISCOVERY_SECRETS` | Watch core Secrets (requires Secret RBAC) |
 | `KNECT_TAP_CALLBACK_HOST` | Advertised callback host |
 | `KNECT_UI_FPS` | TUI target frames per second |
 | `KNECT_ACTIONS_ENABLED` | Action subsystem switch |

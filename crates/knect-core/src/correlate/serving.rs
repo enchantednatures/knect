@@ -50,10 +50,11 @@ impl Correlator for ServingCorrelator {
         let routes = ids_for(store, "Route");
         let configurations = ids_for(store, "Configuration");
         let revisions = ids_for(store, "Revision");
-        let autoscalers = ids_for_gvk(
-            store,
-            Gvk::new("autoscaling.knative.dev", "v1", "PodAutoscaler"),
-        );
+        let mut autoscalers =
+            store.ids_by_group_kind("autoscaling.internal.knative.dev", "PodAutoscaler");
+        autoscalers.extend(store.ids_by_group_kind("autoscaling.knative.dev", "PodAutoscaler"));
+        autoscalers.sort();
+        autoscalers.dedup();
         let deployments = ids_for_gvk(store, Gvk::new("apps", "v1", "Deployment"));
         let pods = ids_for_gvk(store, Gvk::new("", "v1", "Pod"));
 

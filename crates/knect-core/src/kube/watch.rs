@@ -451,23 +451,42 @@ async fn emit(updates: &Option<mpsc::Sender<WatchUpdate>>, update: WatchUpdate) 
 fn event_to_update(gvk: &Gvk, event: WatchEvent) -> Option<WatchUpdate> {
     match event {
         WatchEvent::Init => Some(WatchUpdate::Init { gvk: gvk.clone() }),
-        WatchEvent::InitApply(object) => Some(WatchUpdate::InitApply {
-            gvk: gvk.clone(),
-            id: resource_id(&object),
-            object,
-        }),
-        WatchEvent::Apply(object) => Some(WatchUpdate::Apply {
-            gvk: gvk.clone(),
-            id: resource_id(&object),
-            object,
-        }),
-        WatchEvent::Delete(object) => Some(WatchUpdate::Delete {
-            gvk: gvk.clone(),
-            id: resource_id(&object),
-            object,
-        }),
+        WatchEvent::InitApply(object) => {
+            let object = stamp_gvk(object, gvk);
+            Some(WatchUpdate::InitApply {
+                gvk: gvk.clone(),
+                id: resource_id(&object),
+                object,
+            })
+        }
+        WatchEvent::Apply(object) => {
+            let object = stamp_gvk(object, gvk);
+            Some(WatchUpdate::Apply {
+                gvk: gvk.clone(),
+                id: resource_id(&object),
+                object,
+            })
+        }
+        WatchEvent::Delete(object) => {
+            let object = stamp_gvk(object, gvk);
+            Some(WatchUpdate::Delete {
+                gvk: gvk.clone(),
+                id: resource_id(&object),
+                object,
+            })
+        }
         WatchEvent::InitDone => Some(WatchUpdate::InitDone { gvk: gvk.clone() }),
     }
+}
+
+/// Kubernetes watch events can omit `TypeMeta`. Stamp the discovered GVK so
+/// every object enters the store under the same identity its watcher reports.
+fn stamp_gvk(mut object: DynamicObject, gvk: &Gvk) -> DynamicObject {
+    object.types = Some(kube::api::TypeMeta {
+        api_version: gvk.api_version(),
+        kind: gvk.kind.clone(),
+    });
+    object
 }
 
 fn is_resource_gone(error: &CoreError) -> bool {
@@ -567,6 +586,27 @@ mod tests {
             }
             other => panic!("unexpected update: {other:?}"),
         }
+
+        // kube-rs watch events may omit TypeMeta. The watcher GVK must still
+        // become the object identity, or core resources never reach the store.
+        let core_gvk = Gvk::new("", "v1", "Pod");
+        let mut typeless = test_object("Pod", "web");
+        typeless.types = None;
+        typeless.metadata.namespace = Some("default".to_owned());
+        match event_to_update(&core_gvk, WatchEvent::InitApply(typeless)) {
+            Some(WatchUpdate::InitApply { id, object, .. }) => {
+                assert_eq!(id.api_version, "v1");
+                assert_eq!(id.kind, "Pod");
+                assert_eq!(id.namespace.as_deref(), Some("default"));
+                assert_eq!(id.name, "web");
+                assert_eq!(
+                    object.types.as_ref().map(|types| types.kind.as_str()),
+                    Some("Pod")
+                );
+            }
+            other => panic!("unexpected update: {other:?}"),
+        }
+
         assert!(matches!(
             event_to_update(&gvk, WatchEvent::Delete(test_object("ConfigMap", "one"))),
             Some(WatchUpdate::Delete { .. })
