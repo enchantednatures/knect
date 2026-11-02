@@ -47,7 +47,10 @@ pub async fn serve(
     let listener = TcpListener::bind(address)
         .await
         .map_err(|error| DaemonError::Transport(format!("cannot bind {address}: {error}")))?;
-    tracing::info!(%address, "HTTP listener started");
+    let bound = listener
+        .local_addr()
+        .map_err(|error| DaemonError::Transport(format!("cannot inspect {address}: {error}")))?;
+    tracing::info!(address = %bound, "HTTP listener started");
     axum::serve(listener, router(state))
         .with_graceful_shutdown(cancel.cancelled_owned())
         .await

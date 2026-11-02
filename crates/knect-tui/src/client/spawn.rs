@@ -106,6 +106,7 @@ fn is_executable(path: &Path) -> bool {
 pub struct SpawnedDaemon {
     child: Child,
     program: PathBuf,
+    log_path: Option<PathBuf>,
 }
 
 impl SpawnedDaemon {
@@ -119,6 +120,12 @@ impl SpawnedDaemon {
     #[must_use]
     pub fn program(&self) -> &Path {
         &self.program
+    }
+
+    /// Captured daemon log, when the log file could be created.
+    #[must_use]
+    pub fn log_path(&self) -> Option<&Path> {
+        self.log_path.as_deref()
     }
 
     /// Sends a kill signal, ignoring errors on an already-exited child.
@@ -143,25 +150,43 @@ impl Drop for SpawnedDaemon {
 
 /// Spawns `knectd` bound to `socket` with inherited configuration.
 ///
-/// Only the socket path is overridden so the client and daemon cannot disagree
-/// about where to connect. Standard streams are detached so daemon logs cannot
-/// corrupt the TUI.
+/// The socket path is always overridden. Unless `KNECT_DAEMON_HTTP_ADDR` is
+/// configured, the daemon binds an ephemeral loopback HTTP port so auto-spawn
+/// cannot collide with a local service. Standard streams are detached from the
+/// terminal; stderr is captured to a temporary log for diagnostics.
 pub async fn spawn_daemon(program: &Path, socket: &Path) -> Result<SpawnedDaemon, ClientError> {
+    let configured_http_addr = std::env::var("KNECT_DAEMON_HTTP_ADDR").ok();
+    let log_path = std::env::temp_dir().join(format!("knectd-spawn-{}.log", std::process::id()));
+    let (log_path, stderr) = match std::fs::File::create(&log_path) {
+        Ok(file) => (Some(log_path), Stdio::from(file)),
+        Err(_) => (None, Stdio::null()),
+    };
     let mut command = Command::new(program);
     command
         .arg("--socket-path")
         .arg(socket)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(stderr)
         .kill_on_drop(true);
+    if let Some(address) = auto_http_addr(configured_http_addr.as_deref()) {
+        command.args(["--http-addr", address]);
+    }
     let child = command.spawn().map_err(|error| {
         ClientError::Spawn(format!("cannot run {}: {error}", program.display()))
     })?;
     Ok(SpawnedDaemon {
         child,
         program: program.to_path_buf(),
+        log_path,
     })
+}
+
+fn auto_http_addr(configured: Option<&str>) -> Option<&'static str> {
+    configured
+        .filter(|value| !value.trim().is_empty())
+        .is_none()
+        .then_some("127.0.0.1:0")
 }
 
 /// Waits until the Unix socket accepts a connection.
@@ -253,6 +278,14 @@ mod tests {
         assert!(!wait_for_socket(&path, Duration::from_millis(100)).await);
     }
 
+    #[test]
+    fn auto_http_addr_is_used_only_when_unconfigured() {
+        assert_eq!(auto_http_addr(None), Some("127.0.0.1:0"));
+        assert_eq!(auto_http_addr(Some("")), Some("127.0.0.1:0"));
+        assert_eq!(auto_http_addr(Some("  ")), Some("127.0.0.1:0"));
+        assert_eq!(auto_http_addr(Some("127.0.0.1:9000")), None);
+    }
+
     #[tokio::test]
     async fn spawn_runs_and_drop_kills_the_child() {
         let directory = tempfile::tempdir().expect("temp");
@@ -260,6 +293,7 @@ mod tests {
         let socket = directory.path().join("knectd.sock");
         let mut daemon = spawn_daemon(&script, &socket).await.expect("spawn");
         assert!(daemon.id().is_some());
+        assert!(daemon.log_path().is_some());
         daemon.terminate();
         assert!(daemon.wait_for_exit(Duration::from_secs(2)).await);
     }

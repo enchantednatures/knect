@@ -208,8 +208,12 @@ pub async fn connect(options: ConnectOptions) -> Result<Connected, ClientError> 
                         if wait_for_socket(path, options.spawn_timeout).await {
                             spawned = Some(handle);
                         } else {
+                            let log = handle
+                                .log_path()
+                                .map(|path| format!("; daemon log: {}", path.display()))
+                                .unwrap_or_default();
                             warning = Some(format!(
-                                "spawned {} but {} did not become ready",
+                                "spawned {} but {} did not become ready{log}",
                                 program.display(),
                                 path.display()
                             ));
@@ -219,7 +223,7 @@ pub async fn connect(options: ConnectOptions) -> Result<Connected, ClientError> 
                 },
                 None => {
                     warning = Some(format!(
-                        "no daemon at {} and knectd was not found on PATH or KNECTD_BIN",
+                        "no daemon at {}; knectd was not found. Build it with `cargo build -p knectd`, install it, or set KNECTD_BIN",
                         path.display()
                     ));
                 }
