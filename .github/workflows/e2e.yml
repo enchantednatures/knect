@@ -17,10 +17,9 @@ concurrency:
 env:
   KUBECONFIG: /tmp/knect-e2e-kubeconfig
   KIND_VERSION: v0.31.0
-  KNECT_PRELOAD_IMAGES: "1"
-  # Saving every image into one tar exhausts the hosted runner disk. Keep the
-  # download cache, but let each run load images directly from Docker.
-  KNECT_E2E_SAVE_IMAGE_CACHE: "0"
+  # Hosted runners do not have enough disk for a second copy of every image.
+  # Let the Kind node pull from the registry; local runs can still preload.
+  KNECT_PRELOAD_IMAGES: "0"
 
 jobs:
   kind-e2e:
@@ -40,14 +39,6 @@ jobs:
       - uses: azure/setup-helm@v4
         with:
           version: v4.3.0
-
-      - name: Cache E2E images and downloads
-        uses: actions/cache@v4
-        with:
-          path: /tmp/knect-e2e-cache
-          key: ${{ runner.os }}-knect-e2e-${{ hashFiles('hack/images.txt', 'hack/kind-config.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-knect-e2e-
 
       - uses: dtolnay/rust-toolchain@master
         with:
