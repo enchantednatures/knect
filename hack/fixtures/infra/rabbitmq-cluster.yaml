@@ -16,7 +16,7 @@ spec:
     storage: 1Gi
   resources:
     requests:
-      cpu: 100m
+      cpu: 10m
       memory: 768Mi
     limits:
       cpu: "1"

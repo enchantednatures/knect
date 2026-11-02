@@ -185,11 +185,51 @@ wait_for_daemonset() {
 # a rollout rather than after. Missing workload kinds are ignored.
 relax_cpu_requests() {
 	local namespace="$1"
-	local kind
+	local kind pods
 	for kind in deployment statefulset daemonset; do
 		kubectl_e2e -n "${namespace}" set resources "${kind}" --all \
 			--requests=cpu=10m >/dev/null 2>&1 || true
 	done
+
+	# A rolling update deadlocks when the old pods still hold the runner's
+	# scarce CPU: the new low-request pods cannot schedule, so the old ones are
+	# never retired. Delete only pods whose requests are still above the cap;
+	# controllers recreate them from the patched templates.
+	pods="$(
+		kubectl_e2e -n "${namespace}" get pods -o json 2>/dev/null |
+			python3 -c '
+import json, sys
+
+def cpu(value):
+    text = str(value or "0")
+    try:
+        if text.endswith("m"):
+            return float(text[:-1]) / 1000
+        return float(text)
+    except ValueError:
+        return 0
+
+data = json.load(sys.stdin)
+for pod in data.get("items", []):
+    meta = pod.get("metadata", {})
+    if meta.get("deletionTimestamp"):
+        continue
+    spec = pod.get("spec", {})
+    containers = spec.get("containers", []) + spec.get("initContainers", [])
+    requests = [
+        cpu(c.get("resources", {}).get("requests", {}).get("cpu"))
+        for c in containers
+    ]
+    if any(request > 0.015 for request in requests):
+        print(meta.get("name", ""))
+' 2>/dev/null || true
+	)"
+	if [[ -n "${pods}" ]]; then
+		# Word splitting is intentional: one pod name per line.
+		# shellcheck disable=SC2086
+		kubectl_e2e -n "${namespace}" delete pod ${pods} \
+			--ignore-not-found --wait=false >/dev/null 2>&1 || true
+	fi
 }
 
 # wait_ready.sh is intentionally a standalone script so humans and CI can use
