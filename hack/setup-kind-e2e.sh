@@ -84,6 +84,11 @@ create_cluster() {
 	kind_e2e export kubeconfig --name "${KIND_CLUSTER_NAME}"
 	assert_e2e_context
 	kubectl_e2e get nodes -o wide
+
+	# Recreate kube-system workload pods with small requests so the fixture
+	# matrix fits on the runner; static control-plane pods are left alone.
+	relax_cpu_requests kube-system
+	wait_ready --namespace kube-system --timeout 300
 }
 
 prime_traffic_split_revisions() {
