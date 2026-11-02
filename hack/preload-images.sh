@@ -123,13 +123,22 @@ if [[ "${#failed[@]}" -gt 0 ]]; then
 fi
 
 if [[ "${save_cache}" -eq 1 && "${#pulled[@]}" -gt 0 && ! -f "${cache_tar}" ]]; then
-	log "saving Docker image cache to ${cache_tar}"
-	if docker save -o "${cache_tar}.tmp" "${pulled[@]}"; then
-		mv "${cache_tar}.tmp" "${cache_tar}"
-		ok "saved image cache ($(du -sh "${cache_tar}" | cut -f1))"
+	# A full image tar is often larger than the free space left on a hosted
+	# runner. Require a comfortable margin before writing it; loading the
+	# images from Docker is always the fallback.
+	available_kb="$(df -Pk "${KNECT_E2E_CACHE_DIR}" | awk 'NR == 2 { print $4 }')"
+	required_kb=$((15 * 1024 * 1024))
+	if [[ "${available_kb:-0}" -lt "${required_kb}" ]]; then
+		warn "skipping Docker image cache: ${available_kb:-0} KiB free, need $((required_kb / 1024)) MiB"
 	else
-		rm -f "${cache_tar}.tmp"
-		warn "failed to save Docker image cache"
+		log "saving Docker image cache to ${cache_tar}"
+		if docker save -o "${cache_tar}.tmp" "${pulled[@]}"; then
+			mv "${cache_tar}.tmp" "${cache_tar}"
+			ok "saved image cache ($(du -sh "${cache_tar}" | cut -f1))"
+		else
+			rm -f "${cache_tar}.tmp"
+			warn "failed to save Docker image cache"
+		fi
 	fi
 fi
 

@@ -18,7 +18,9 @@ env:
   KUBECONFIG: /tmp/knect-e2e-kubeconfig
   KIND_VERSION: v0.31.0
   KNECT_PRELOAD_IMAGES: "1"
-  KNECT_E2E_SAVE_IMAGE_CACHE: "1"
+  # Saving every image into one tar exhausts the hosted runner disk. Keep the
+  # download cache, but let each run load images directly from Docker.
+  KNECT_E2E_SAVE_IMAGE_CACHE: "0"
 
 jobs:
   kind-e2e:

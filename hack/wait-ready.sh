@@ -54,6 +54,14 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
+# Accept kubectl-style durations as well as plain seconds.
+case "${TIMEOUT}" in
+*s) TIMEOUT="${TIMEOUT%s}" ;;
+*m) TIMEOUT="$(( ${TIMEOUT%m} * 60 ))" ;;
+*h) TIMEOUT="$(( ${TIMEOUT%h} * 3600 ))" ;;
+esac
+[[ "${TIMEOUT}" =~ ^[0-9]+$ ]] || die "invalid timeout: ${TIMEOUT}"
+
 require_cmds kubectl python3
 assert_e2e_context
 
