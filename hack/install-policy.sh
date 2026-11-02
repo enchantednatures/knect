@@ -28,8 +28,9 @@ helm upgrade --install kyverno kyverno/kyverno \
 	--set cleanupController.enabled=false \
 	--set test.image.tag="${KYVERNO_APP_VERSION}" \
 	--set webhooksCleanup.image.tag="${KYVERNO_APP_VERSION}" \
-	--wait \
-	--timeout 10m
+	--wait=false
+relax_cpu_requests "${KYVERNO_NAMESPACE}"
+wait_ready --namespace "${KYVERNO_NAMESPACE}" --timeout 10m
 
 kubectl_e2e wait --for=condition=Established --timeout=300s \
 	crd/clusterpolicies.kyverno.io \

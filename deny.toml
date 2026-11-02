@@ -1,5 +1,9 @@
 [advisories]
-ignore = []
+# serde_yaml is deprecated and pulls unsafe-libyaml, which is unmaintained.
+# It is still the YAML boundary used by Kubernetes dynamic objects; replacing
+# it with serde-saphyr is a post-1.0 migration. The advisory is a maintenance
+# warning, not a known exploitable vulnerability.
+ignore = ["RUSTSEC-2024-0449"]
 
 [licenses]
 allow = [
@@ -11,6 +15,7 @@ allow = [
     "Unicode-3.0",
     "Zlib",
     "MPL-2.0",
+    "CDLA-Permissive-2.0",
 ]
 
 [sources]

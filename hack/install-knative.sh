@@ -33,6 +33,7 @@ install_serving() {
 
 	apply_url_client "${SERVING_BASE}/serving-core.yaml"
 	apply_url_client "${NET_ISTIO_BASE}/net-istio.yaml"
+	relax_cpu_requests knative-serving
 
 	# net-istio is the only networking layer; make it the cluster ingress class.
 	kubectl_e2e -n knative-serving patch configmap config-network --type merge \
@@ -60,6 +61,7 @@ install_eventing() {
 	apply_url_client "${EVENTING_BASE}/eventing-core.yaml"
 	apply_url_client "${EVENTING_BASE}/in-memory-channel.yaml"
 	apply_url_client "${EVENTING_BASE}/mt-channel-broker.yaml"
+	relax_cpu_requests knative-eventing
 
 	wait_ready --namespace knative-eventing --timeout 600
 	ok "Knative Eventing ${KNATIVE_VERSION} ready"
@@ -71,6 +73,7 @@ install_kafka() {
 	apply_url_client "${KAFKA_BASE}/eventing-kafka-controller.yaml"
 	apply_url_client "${KAFKA_BASE}/eventing-kafka-broker.yaml"
 	apply_url_client "${KAFKA_BASE}/eventing-kafka-source.yaml"
+	relax_cpu_requests knative-eventing
 
 	kubectl_e2e -n knative-eventing create configmap kafka-broker-config \
 		--from-literal=bootstrap.servers=redpanda.${KNECT_E2E_NAMESPACE}.svc.cluster.local:9092 \
@@ -92,6 +95,8 @@ install_rabbitmq() {
 	apply_url_client "https://github.com/rabbitmq/messaging-topology-operator/releases/download/${RABBITMQ_TOPOLOGY_OPERATOR_VERSION}/messaging-topology-operator-with-certmanager.yaml"
 	apply_url_client "${RABBITMQ_BASE}/rabbitmq-broker.yaml"
 	apply_url_client "${RABBITMQ_BASE}/rabbitmq-source.yaml"
+	relax_cpu_requests knative-eventing
+	relax_cpu_requests knative-sources
 
 	wait_for_crd 300s \
 		rabbitmqclusters.rabbitmq.com \
@@ -105,6 +110,10 @@ install_serving
 install_eventing
 install_kafka
 install_rabbitmq
+
+relax_cpu_requests knative-serving
+relax_cpu_requests knative-eventing
+relax_cpu_requests knative-sources
 
 log "waiting for all Knative control planes"
 wait_ready --namespace knative-eventing --timeout 900

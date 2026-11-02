@@ -43,6 +43,8 @@ wait_for_crd 300s \
 
 log "applying core backing-service fixtures"
 apply_dir "${KNECT_HACK_DIR}/fixtures/infra"
+relax_cpu_requests cnpg-system
+relax_cpu_requests "${KNECT_E2E_NAMESPACE}"
 
 wait_ready --namespace "${KNECT_E2E_NAMESPACE}" --timeout 900
 ok "backing services ready in namespace ${KNECT_E2E_NAMESPACE}"

@@ -180,6 +180,18 @@ wait_for_daemonset() {
 	wait_for_rollout "$1" "daemonset/$2" "${3:-300s}"
 }
 
+# Keep control-plane CPU requests tiny so the full fixture matrix fits on a
+# small CI runner. This changes the pod template, so call it before waiting for
+# a rollout rather than after. Missing workload kinds are ignored.
+relax_cpu_requests() {
+	local namespace="$1"
+	local kind
+	for kind in deployment statefulset daemonset; do
+		kubectl_e2e -n "${namespace}" set resources "${kind}" --all \
+			--requests=cpu=10m >/dev/null 2>&1 || true
+	done
+}
+
 # wait_ready.sh is intentionally a standalone script so humans and CI can use
 # it directly. This helper gives installers the same failure diagnostics.
 wait_ready() {

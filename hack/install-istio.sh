@@ -29,6 +29,7 @@ log "installing Istio ${ISTIO_VERSION} (profile=minimal + ingressgateway)"
 	--set components.ingressGateways[0].name=istio-ingressgateway \
 	--set components.ingressGateways[0].k8s.service.type=NodePort
 
+relax_cpu_requests "${ISTIO_NAMESPACE}"
 wait_for_deployment "${ISTIO_NAMESPACE}" istiod 600s
 wait_for_deployment "${ISTIO_NAMESPACE}" istio-ingressgateway 600s
 

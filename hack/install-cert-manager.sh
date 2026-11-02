@@ -15,6 +15,7 @@ assert_e2e_context
 
 log "installing cert-manager ${CERT_MANAGER_VERSION}"
 apply_url "${CERT_MANAGER_MANIFEST}"
+relax_cpu_requests cert-manager
 
 wait_for_crd 300s \
 	certificates.cert-manager.io \

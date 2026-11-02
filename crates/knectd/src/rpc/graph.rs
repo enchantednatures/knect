@@ -162,6 +162,9 @@ fn synthesized_link(edge: &Edge) -> Option<LinkRecord> {
         EdgeKind::BackedBy | EdgeKind::ConsumesFrom | EdgeKind::Selects => LinkVia::OperatorCrd,
         EdgeKind::Mounts | EdgeKind::ProvisionedBy => LinkVia::Storage,
         EdgeKind::ConnectsTo | EdgeKind::References => LinkVia::Dns,
+        EdgeKind::DeliversTo | EdgeKind::Subscribes | EdgeKind::DeadLetterSink => {
+            LinkVia::ExplicitBinding
+        }
         _ => return None,
     };
     Some(LinkRecord {
@@ -376,5 +379,65 @@ fn parse_access_mode(value: &str) -> AccessMode {
         "readwritemany" => AccessMode::ReadWriteMany,
         "readonlymany" => AccessMode::ReadOnlyMany,
         _ => AccessMode::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use knect_proto::graph::Health;
+
+    fn eventing_edge(kind: EdgeKind) -> Edge {
+        Edge {
+            id: format!("{kind:?}"),
+            from: ResourceId::namespaced(
+                "eventing.knative.dev/v1",
+                "Trigger",
+                "marrakesh",
+                "marrakesh-events-trigger",
+            ),
+            to: ResourceId::namespaced(
+                "serving.knative.dev/v1",
+                "Service",
+                "marrakesh",
+                "marrakesh",
+            ),
+            kind,
+            label: None,
+            health: Health::Healthy,
+            warnings: Vec::new(),
+            metadata: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn eventing_edges_surface_as_explicit_links() {
+        for kind in [
+            EdgeKind::DeliversTo,
+            EdgeKind::Subscribes,
+            EdgeKind::DeadLetterSink,
+        ] {
+            let link = synthesized_link(&eventing_edge(kind)).expect("eventing link");
+            assert_eq!(link.via, LinkVia::ExplicitBinding);
+        }
+    }
+
+    #[test]
+    fn eventing_edges_surface_in_incident_node_links() {
+        let service = ResourceId::namespaced(
+            "serving.knative.dev/v1",
+            "Service",
+            "marrakesh",
+            "marrakesh",
+        );
+        let mut topology = crate::app::empty_topology("test", 1);
+        topology.edges.push(eventing_edge(EdgeKind::DeliversTo));
+
+        let links = collect_links(&topology, &service);
+
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].via, LinkVia::ExplicitBinding);
+        assert_eq!(links[0].source.kind, "Trigger");
+        assert_eq!(links[0].target, service);
     }
 }

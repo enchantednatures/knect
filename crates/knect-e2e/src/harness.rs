@@ -397,6 +397,40 @@ fn terminate(child: &mut Child) -> Result<(), HarnessError> {
     }
 }
 
+/// Returns the `knect` CLI binary, building it when absent.
+pub async fn knect_binary() -> Result<PathBuf, HarnessError> {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace.join("target"));
+    let name = if cfg!(windows) { "knect.exe" } else { "knect" };
+    let binary = target_dir.join("debug").join(name);
+    if binary.is_file() {
+        return Ok(binary);
+    }
+    let status = tokio::process::Command::new("cargo")
+        .arg("build")
+        .arg("-p")
+        .arg("knect-tui")
+        .arg("--locked")
+        .current_dir(&workspace)
+        .status()
+        .await
+        .map_err(|error| HarnessError::Transport(format!("cannot run cargo build: {error}")))?;
+    if !status.success() {
+        return Err(HarnessError::Transport(format!(
+            "cargo build -p knect-tui failed with {status}"
+        )));
+    }
+    if binary.is_file() {
+        return Ok(binary);
+    }
+    Err(HarnessError::Transport(format!(
+        "built knect binary missing at {}",
+        binary.display()
+    )))
+}
+
 async fn knectd_binary() -> Result<PathBuf, HarnessError> {
     if let Ok(path) = std::env::var("KNECTD_BIN") {
         let path = PathBuf::from(path);

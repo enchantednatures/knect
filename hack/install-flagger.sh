@@ -26,8 +26,9 @@ helm upgrade --install flagger flagger/flagger \
 	--set metricsServer=http://flagger-noop.invalid:9090 \
 	--set 'env[0].name=CONTROL_LOOP_INTERVAL' \
 	--set 'env[0].value=10s' \
-	--wait \
-	--timeout 5m
+	--wait=false
+relax_cpu_requests "${FLAGGER_NAMESPACE}"
+wait_for_deployment "${FLAGGER_NAMESPACE}" flagger 5m
 
 kubectl_e2e wait --for=condition=Established --timeout=300s \
 	crd/canaries.flagger.app \
