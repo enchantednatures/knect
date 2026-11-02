@@ -215,7 +215,10 @@ for pod in data.get("items", []):
     if meta.get("deletionTimestamp"):
         continue
     spec = pod.get("spec", {})
-    containers = spec.get("containers", []) + spec.get("initContainers", [])
+    # `kubectl set resources` does not patch init containers. Only retire pods
+    # whose regular containers still exceed the cap; otherwise an Istio init
+    # container would make every relax pass restart the same pods forever.
+    containers = spec.get("containers", [])
     requests = [
         cpu(c.get("resources", {}).get("requests", {}).get("cpu"))
         for c in containers
