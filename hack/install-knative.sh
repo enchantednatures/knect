@@ -44,6 +44,8 @@ install_serving() {
 		-p '{"data":{"sslip.io":""}}' >/dev/null
 	kubectl_e2e -n knative-serving patch configmap config-features --type merge \
 		-p '{"data":{"kubernetes.podspec-persistent-volume-claim":"enabled","kubernetes.podspec-persistent-volume-write":"enabled"}}' >/dev/null
+	kubectl_e2e -n knative-serving patch configmap config-deployment --type merge \
+		-p '{"data":{"queue-sidecar-cpu-request":"10m","queue-sidecar-memory-request":"64Mi"}}' >/dev/null
 
 	wait_ready --namespace knative-serving --timeout 600
 	ok "Knative Serving ${KNATIVE_VERSION} ready"

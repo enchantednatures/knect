@@ -139,6 +139,10 @@ run_phase "backing services" bash "${KNECT_HACK_DIR}/install-backing.sh"
 run_phase "fixtures" install_backing_then_fixtures
 
 if [[ "${WAIT_AT_END}" == "1" ]]; then
+	# Let the last Knative revisions and operator children appear, then cap
+	# their requests once more before the all-namespace readiness gate.
+	sleep 15
+	relax_cpu_requests "${KNECT_E2E_NAMESPACE}"
 	CURRENT_PHASE="final wait"
 	run_phase "final wait" wait_ready --all --timeout "${KNECT_E2E_FINAL_WAIT:-1200}"
 fi
