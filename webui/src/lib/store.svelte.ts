@@ -4,7 +4,7 @@
 import { EventStream, browserStorage, type ConnectionState } from './events';
 import { defaultFilters, filterEdges, filterNodes, isFiltered, type FilterState } from './filters';
 import { computeLayout, layoutSignature, nodeSize, type NodePosition } from './layout';
-import { applySseEvent, emptyRealtime, type GraphState, type RealtimeState } from './reducer';
+import { applySseEvent, emptyRealtime, type RealtimeState } from './reducer';
 import { RpcCallError, RpcClient, type RpcClientOptions } from './rpc';
 import type {
   DaemonStatus,
@@ -60,6 +60,8 @@ export class AppStore {
 
   filters = $state<FilterState>(defaultFilters());
   positions = $state<Record<string, NodePosition>>({});
+  /** Increments when the user changes the visible graph or reloads a snapshot. */
+  layoutEpoch = $state(0);
 
   tapHandles = $state<TapHandle[]>([]);
   tapBusy = $state(false);
@@ -91,6 +93,8 @@ export class AppStore {
   private streamFactory: ((options: ConstructorParameters<typeof EventStream>[0]) => EventStream) | null;
   private baseUrl: string;
   private lastSignature = '';
+  private layoutTimer: ReturnType<typeof setTimeout> | null = null;
+  private layoutRefit = false;
   private detailsRequest = 0;
   private diffRequest = 0;
 
@@ -167,7 +171,7 @@ export class AppStore {
       data: topology,
     });
     this.lastEventAt = Date.now();
-    this.syncLayout(this.realtime.graph);
+    this.refreshLayout();
   }
 
   ingest(event: SseEvent): void {
@@ -184,17 +188,45 @@ export class AppStore {
         this.clearSelection();
       }
     }
-    this.syncLayout(this.realtime.graph);
+    this.scheduleLayout();
   }
 
-  /** Recomputes dagre only when the node/edge identity set changed. */
-  syncLayout(graph: GraphState = this.graph): void {
-    const signature = layoutSignature(graph.nodes, graph.edges);
+  /**
+   * Recomputes the layout only when the visible node/edge identity set changed.
+   *
+   * Layout must follow the filters, not the full graph: otherwise hiding most
+   * nodes leaves the survivors scattered across the positions of the unfiltered
+   * canvas and every edge stretches across a huge empty area.
+   */
+  syncLayout(): boolean {
+    const nodes = this.visibleNodes;
+    const edges = this.visibleEdges;
+    const signature = layoutSignature(nodes, edges);
     if (signature === this.lastSignature && Object.keys(this.positions).length > 0) {
-      return;
+      return false;
     }
     this.lastSignature = signature;
-    this.positions = computeLayout(graph.nodes, graph.edges);
+    this.positions = computeLayout(nodes, edges);
+    return true;
+  }
+
+  /** Recomputes immediately and asks the viewport to fit the new bounds. */
+  private refreshLayout(): void {
+    if (this.syncLayout()) this.layoutEpoch += 1;
+  }
+
+  /** Coalesces layout work for bursts of live graph patches. */
+  private scheduleLayout(refit = false): void {
+    this.layoutRefit ||= refit;
+    if (this.layoutTimer !== null) return;
+    this.layoutTimer = setTimeout(() => {
+      this.layoutTimer = null;
+      const changed = this.syncLayout();
+      if (this.layoutRefit) {
+        this.layoutRefit = false;
+        if (changed) this.layoutEpoch += 1;
+      }
+    }, 180);
   }
 
   selectNode(node: ResourceNode): void {
@@ -313,6 +345,11 @@ export class AppStore {
 
   setFilter<K extends keyof FilterState>(key: K, value: FilterState[K]): void {
     this.filters[key] = value;
+    if (key === 'search') {
+      this.scheduleLayout(true);
+    } else {
+      this.refreshLayout();
+    }
   }
 
   toggleCategory(category: FilterState['hiddenCategories'][number]): void {
@@ -320,10 +357,12 @@ export class AppStore {
     this.filters.hiddenCategories = hidden.includes(category)
       ? hidden.filter((candidate) => candidate !== category)
       : [...hidden, category];
+    this.refreshLayout();
   }
 
   resetFilters(): void {
     this.filters = defaultFilters();
+    this.refreshLayout();
   }
 
   setDrawer(drawer: Drawer): void {
@@ -355,6 +394,10 @@ export class AppStore {
   }
 
   close(): void {
+    if (this.layoutTimer !== null) {
+      clearTimeout(this.layoutTimer);
+      this.layoutTimer = null;
+    }
     this.stream?.close();
     this.stream = null;
   }

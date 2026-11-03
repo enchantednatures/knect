@@ -6,6 +6,7 @@
 
   $effect(() => {
     const drawer = store.drawer;
+    const layoutEpoch = store.layoutEpoch;
     const padding =
       drawer === 'inspector' || drawer === 'tap'
         ? { top: 0.08, right: 0.08, bottom: 0.08, left: 0.08 }
@@ -16,10 +17,10 @@
       void fitView({
         padding,
         duration: 220,
-        minZoom: compact ? 0.62 : 0.2,
+        minZoom: compact ? 0.3 : 0.05,
         maxZoom: 1.1,
       });
-    }, 60);
+    }, layoutEpoch === 0 ? 60 : 140);
     return () => clearTimeout(timer);
   });
 </script>

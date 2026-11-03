@@ -82,8 +82,8 @@
     edges={flowEdges}
     {nodeTypes}
     fitView
-    fitViewOptions={{ padding: 0.18, minZoom: 0.2, maxZoom: 1.1 }}
-    minZoom={0.1}
+    fitViewOptions={{ padding: 0.18, minZoom: 0.05, maxZoom: 1.1 }}
+    minZoom={0.02}
     maxZoom={1.8}
     colorMode="dark"
     nodesDraggable
