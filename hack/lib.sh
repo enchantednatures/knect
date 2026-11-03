@@ -188,7 +188,9 @@ relax_cpu_requests() {
 	local kind pods
 	for kind in deployment statefulset daemonset; do
 		kubectl_e2e -n "${namespace}" set resources "${kind}" --all \
-			--requests=cpu=10m,memory=64Mi >/dev/null 2>&1 || true
+			--requests=cpu=1m >/dev/null 2>&1 || true
+		kubectl_e2e -n "${namespace}" set resources "${kind}" --all \
+			--requests=memory=32Mi >/dev/null 2>&1 || true
 	done
 
 	# A rolling update deadlocks when the old pods still hold the runner's
@@ -237,7 +239,7 @@ for pod in data.get("items", []):
         for c in containers
     ]
     if any(
-        cpu(request.get("cpu")) > 0.015 or memory_mi(request.get("memory")) > 80
+        cpu(request.get("cpu")) > 0.005 or memory_mi(request.get("memory")) > 40
         for request in requests
     ):
         print(meta.get("name", ""))
