@@ -112,7 +112,9 @@ install_backing_then_fixtures() {
 	for dir in links infra storage operators serving eventing mutations policy actions tap; do
 		apply_dir "${KNECT_HACK_DIR}/fixtures/${dir}" || rc=1
 	done
+	relax_cpu_requests "${KNECT_E2E_NAMESPACE}"
 	prime_traffic_split_revisions || rc=1
+	relax_cpu_requests "${KNECT_E2E_NAMESPACE}"
 	return "${rc}"
 }
 

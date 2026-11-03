@@ -17,10 +17,10 @@ spec:
   resources:
     requests:
       cpu: 10m
-      memory: 768Mi
+      memory: 64Mi
     limits:
       cpu: "1"
-      memory: 768Mi
+      memory: 64Mi
   rabbitmq:
     additionalConfig: |
       default_queue_type = quorum

@@ -188,7 +188,7 @@ relax_cpu_requests() {
 	local kind pods
 	for kind in deployment statefulset daemonset; do
 		kubectl_e2e -n "${namespace}" set resources "${kind}" --all \
-			--requests=cpu=10m >/dev/null 2>&1 || true
+			--requests=cpu=10m,memory=64Mi >/dev/null 2>&1 || true
 	done
 
 	# A rolling update deadlocks when the old pods still hold the runner's
@@ -209,6 +209,19 @@ def cpu(value):
     except ValueError:
         return 0
 
+def memory_mi(value):
+    text = str(value or "0")
+    try:
+        if text.endswith("Ki"):
+            return float(text[:-2]) / 1024
+        if text.endswith("Mi"):
+            return float(text[:-2])
+        if text.endswith("Gi"):
+            return float(text[:-2]) * 1024
+        return float(text) / (1024 * 1024)
+    except ValueError:
+        return 0
+
 data = json.load(sys.stdin)
 for pod in data.get("items", []):
     meta = pod.get("metadata", {})
@@ -220,10 +233,13 @@ for pod in data.get("items", []):
     # container would make every relax pass restart the same pods forever.
     containers = spec.get("containers", [])
     requests = [
-        cpu(c.get("resources", {}).get("requests", {}).get("cpu"))
+        c.get("resources", {}).get("requests", {})
         for c in containers
     ]
-    if any(request > 0.015 for request in requests):
+    if any(
+        cpu(request.get("cpu")) > 0.015 or memory_mi(request.get("memory")) > 80
+        for request in requests
+    ):
         print(meta.get("name", ""))
 ' 2>/dev/null || true
 	)"
