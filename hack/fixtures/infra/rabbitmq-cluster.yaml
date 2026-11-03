@@ -20,7 +20,7 @@ spec:
       memory: 64Mi
     limits:
       cpu: "1"
-      memory: 64Mi
+      memory: 768Mi
   rabbitmq:
     additionalConfig: |
       default_queue_type = quorum
