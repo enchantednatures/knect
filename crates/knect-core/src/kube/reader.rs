@@ -46,8 +46,11 @@ impl KubeReader {
 
     /// Builds a client from an explicit context and optional kubeconfig path.
     ///
-    /// When `kubeconfig` is `None`, the standard kubeconfig search path is
-    /// used (including `KUBECONFIG`). This never contacts the API server.
+    /// When neither a context nor a kubeconfig is given, the configuration is
+    /// inferred: the in-cluster service account is preferred, falling back to
+    /// the standard kubeconfig search path (including `KUBECONFIG`). With an
+    /// explicit context, the standard kubeconfig search path is used. This
+    /// never contacts the API server.
     pub async fn from_context(
         context: Option<&str>,
         kubeconfig: Option<&Path>,
@@ -70,6 +73,9 @@ impl KubeReader {
                     .await
                     .map_err(|error| CoreError::Config(error.to_string()))?
             }
+            None if options.context.is_none() => kube::Config::infer()
+                .await
+                .map_err(|error| CoreError::Config(error.to_string()))?,
             None => kube::Config::from_kubeconfig(&options)
                 .await
                 .map_err(|error| CoreError::Config(error.to_string()))?,
