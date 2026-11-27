@@ -1,6 +1,6 @@
 # knect architecture and frozen interfaces
 
-Status: v1.0.0 release candidate. The protocol in `docs/protocol.md` and
+Status: v1.1.0. The protocol in `docs/protocol.md` and
 `crates/knect-proto` is
 frozen. The daemon runtime, redb cache, discovery and watch supervisors,
 Serving/Eventing topology, service-link/operator/storage/policy/mutation
@@ -66,7 +66,7 @@ knectd          knect-tui / knect-e2e
 | `graph/support.rs` | shared node/edge/time/condition/sanitization helpers and stable edge IDs | implemented |
 | `correlate/mod.rs` | `CorrelationContext`, `Correlator`, `CorrelationPipeline`, frozen `STAGES` order | frozen registry |
 | `correlate/serving.rs` | KService -> Route/Configuration -> Revision -> PA -> Deployment -> Pod, traffic and scale states | implemented |
-| `correlate/eventing.rs` | Broker/Trigger/Source/SinkBinding/Subscription/Channel, filters, DLS, MT/Kafka/RabbitMQ classes | implemented |
+| `correlate/eventing.rs` | Broker/Trigger/EventType/Source/SinkBinding/Subscription/Channel/Sink, filters, DLS, MT/Kafka/RabbitMQ classes | implemented |
 | `correlate/{links,operators,storage,mutations}.rs` | No-op stage stubs | Task 6/7/8/9 replace bodies |
 | `correlate/policy/{mod,istio,flagger,kyverno}.rs` | Policy aggregator plus no-op sub-stages | Task 10 replaces bodies |
 | `cache/mod.rs` | `SnapshotCache`, `NoopCache` | Task 5 replaces implementation |

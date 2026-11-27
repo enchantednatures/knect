@@ -7,9 +7,11 @@ import {
   matchesSearch,
   namespaceOptions,
   selectNode,
+  visibleTopologyNodes,
 } from '../lib/filters';
+import type { Edge } from '../lib/types';
 import { resourceKey } from '../lib/types';
-import { broker, kservice, policy, revision, topology } from './fixtures';
+import { broker, kservice, node, policy, revision, revisionId, topology } from './fixtures';
 
 describe('graph filters', () => {
   it('returns every node with default filters', () => {
@@ -75,6 +77,111 @@ describe('graph filters', () => {
     const edges = filterEdges(topology.edges, visible);
     expect(edges.some((edge) => edge.id === 'edge-trigger-broker')).toBe(false);
     expect(edges.some((edge) => edge.id === 'edge-kservice-revision')).toBe(true);
+  });
+
+  it('keeps Knative resources and connected dependencies in the default scope', () => {
+    const unrelatedPod = node({
+      id: { ...revisionId, kind: 'Pod', name: 'unrelated' },
+      category: 'pod',
+    });
+    const sharedConfig = node({
+      id: { ...revisionId, kind: 'ConfigMap', name: 'shared' },
+      category: 'config_map',
+    });
+    const extraEdges: Edge[] = [
+      {
+        id: 'edge-revision-config',
+        from: revision.id,
+        to: sharedConfig.id,
+        kind: 'uses_config_map',
+        label: null,
+        health: 'healthy',
+        warnings: [],
+        metadata: {},
+      },
+      {
+        id: 'edge-unrelated-config',
+        from: unrelatedPod.id,
+        to: sharedConfig.id,
+        kind: 'uses_config_map',
+        label: null,
+        health: 'healthy',
+        warnings: [],
+        metadata: {},
+      },
+    ];
+    const nodes = [...topology.nodes, unrelatedPod, sharedConfig];
+    const edges = [...topology.edges, ...extraEdges];
+    const names = visibleTopologyNodes(nodes, edges, defaultFilters()).map((node) => node.name);
+
+    expect(names).toEqual(expect.arrayContaining(topology.nodes.map((node) => node.name)));
+    expect(names).toContain('shared');
+    expect(names).not.toContain('unrelated');
+  });
+
+  it('shows every resource when the scope is all', () => {
+    const unrelatedPod = node({
+      id: { ...revisionId, kind: 'Pod', name: 'unrelated' },
+      category: 'pod',
+    });
+    const names = visibleTopologyNodes(
+      [...topology.nodes, unrelatedPod],
+      topology.edges,
+      { ...defaultFilters(), scope: 'all' },
+    ).map((node) => node.name);
+
+    expect(names).toContain('unrelated');
+  });
+
+  it('seeds the Knative scope with primary resources even without edges', () => {
+    const lonelyPod = node({
+      id: { ...revisionId, kind: 'Pod', name: 'lonely' },
+      category: 'pod',
+    });
+    const visible = visibleTopologyNodes([kservice, lonelyPod], [], defaultFilters());
+
+    expect(visible.map((node) => node.name)).toEqual(['hello']);
+  });
+
+  it('includes the subject of a SinkBinding as an event producer', () => {
+    const binding = node({
+      id: { ...revisionId, kind: 'SinkBinding', name: 'orders-binding' },
+      category: 'sink_binding',
+    });
+    const producer = node({
+      id: { ...revisionId, kind: 'Deployment', name: 'order-producer' },
+      category: 'deployment',
+    });
+    const edge: Edge = {
+      id: 'edge-producer-binding',
+      from: producer.id,
+      to: binding.id,
+      kind: 'references',
+      label: null,
+      health: 'healthy',
+      warnings: [],
+      metadata: {},
+    };
+
+    const visible = visibleTopologyNodes([binding, producer], [edge], defaultFilters());
+
+    expect(visible.map((node) => node.name)).toEqual(
+      expect.arrayContaining(['orders-binding', 'order-producer']),
+    );
+  });
+
+  it('lets search reach resources outside the Knative scope', () => {
+    const unrelatedPod = node({
+      id: { ...revisionId, kind: 'Pod', name: 'unrelated' },
+      category: 'pod',
+    });
+    const visible = visibleTopologyNodes(
+      [...topology.nodes, unrelatedPod],
+      topology.edges,
+      { ...defaultFilters(), search: 'unrelated' },
+    );
+
+    expect(visible.map((node) => node.name)).toEqual(['unrelated']);
   });
 
   it('toggles node selection', () => {

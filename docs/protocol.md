@@ -297,9 +297,10 @@ is reported as `-32602` with details naming the client and daemon versions.
 - `NodeUpdated`: `node`, `changed_fields`, `generation`, `ts`.
 
 `NodeCategory` is one of: `k_service`, `route`, `configuration`, `revision`,
-`pod_autoscaler`, `broker`, `trigger`, `source`, `sink_binding`,
-`subscription`, `channel`, `deployment`, `replica_set`, `pod`, `service`,
-`endpoints`, `backing_service`, `topic`, `storage_class`, `persistent_volume`,
+`pod_autoscaler`, `broker`, `trigger`, `event_type`, `source`, `sink_binding`,
+`subscription`, `channel`, `sink`, `deployment`, `replica_set`, `pod`,
+`service`, `endpoints`, `backing_service`, `topic`, `storage_class`,
+`persistent_volume`,
 `persistent_volume_claim`, `ceph_pool`, `policy`, `canary`, `virtual_service`,
 `destination_rule`, `peer_authentication`, `authorization_policy`, `config_map`,
 `secret`, `namespace`, `unknown`.

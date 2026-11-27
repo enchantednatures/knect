@@ -23,6 +23,7 @@ use crate::store::{ResourceStore, resource_id};
 
 const EVENTING_API: &str = "eventing.knative.dev/v1";
 const MESSAGING_GROUP: &str = "messaging.knative.dev";
+const SINKS_GROUP: &str = "sinks.knative.dev";
 const BROKER_CLASS_ANNOTATION: &str = "eventing.knative.dev/broker.class";
 const DEFAULT_BROKER_CLASS: &str = "MTChannelBasedBroker";
 
@@ -43,21 +44,26 @@ impl Correlator for EventingCorrelator {
         let store = &ctx.store;
         let brokers = ids_in_group(store, "eventing.knative.dev", "Broker");
         let triggers = ids_in_group(store, "eventing.knative.dev", "Trigger");
+        let event_types = ids_in_group(store, "eventing.knative.dev", "EventType");
         let subscriptions = ids_in_group(store, MESSAGING_GROUP, "Subscription");
         let channels = channel_ids(store);
         let sources = source_ids(store);
+        let sinks = sink_ids(store);
 
         add_broker_nodes(store, graph, &brokers);
         add_trigger_nodes(store, graph, &triggers);
         add_channel_nodes(store, graph, &channels);
         add_source_nodes(store, graph, &sources);
         add_subscription_nodes(store, graph, &subscriptions);
+        add_sink_nodes(store, graph, &sinks);
+        add_event_type_nodes(store, graph, &event_types);
 
         add_broker_backing_edges(store, graph, &brokers);
         add_trigger_edges(store, graph, &triggers);
         add_source_edges(store, graph, &sources);
         add_subscription_edges(store, graph, &subscriptions);
         add_channel_backing_edges(store, graph, &channels);
+        add_event_type_edges(store, graph, &event_types);
 
         Ok(())
     }
@@ -85,6 +91,17 @@ fn source_ids(store: &ResourceStore) -> Vec<ResourceId> {
     store
         .iter()
         .filter(|(id, _)| id.api_version.starts_with("sources.knative.dev/"))
+        .map(|(id, _)| id.clone())
+        .collect()
+}
+
+fn sink_ids(store: &ResourceStore) -> Vec<ResourceId> {
+    store
+        .iter()
+        .filter(|(id, _)| {
+            api_group(&id.api_version) == SINKS_GROUP
+                && matches!(id.kind.as_str(), "JobSink" | "IntegrationSink")
+        })
         .map(|(id, _)| id.clone())
         .collect()
 }
@@ -226,6 +243,105 @@ fn add_subscription_nodes(store: &ResourceStore, graph: &mut GraphBuilder, ids: 
                 badges: Vec::new(),
             },
         );
+    }
+}
+
+fn add_sink_nodes(store: &ResourceStore, graph: &mut GraphBuilder, ids: &[ResourceId]) {
+    for id in ids {
+        let Some(object) = store.get(id) else {
+            continue;
+        };
+        let address = text_field(&object, &["status", "address", "url"])
+            .or_else(|| text_field(&object, &["status", "url"]));
+        push_node(
+            graph,
+            &object,
+            NodeSpec {
+                category: NodeCategory::Sink,
+                health: ready_health(&object, Health::Unknown),
+                summary: address.map_or_else(|| id.kind.clone(), ToOwned::to_owned),
+                badges: Vec::new(),
+            },
+        );
+    }
+}
+
+fn add_event_type_nodes(store: &ResourceStore, graph: &mut GraphBuilder, ids: &[ResourceId]) {
+    for id in ids {
+        let Some(object) = store.get(id) else {
+            continue;
+        };
+        let event_type = text_field(&object, &["spec", "type"]).unwrap_or("event");
+        let source = text_field(&object, &["spec", "source"]).unwrap_or("");
+        let summary = if source.is_empty() {
+            event_type.to_owned()
+        } else {
+            format!("{event_type} from {source}")
+        };
+        push_node(
+            graph,
+            &object,
+            NodeSpec {
+                category: NodeCategory::EventType,
+                health: ready_health(&object, Health::Healthy),
+                summary,
+                badges: Vec::new(),
+            },
+        );
+    }
+}
+
+fn add_event_type_edges(
+    store: &ResourceStore,
+    graph: &mut GraphBuilder,
+    event_types: &[ResourceId],
+) {
+    for event_type_id in event_types {
+        let Some(event_type) = store.get(event_type_id) else {
+            continue;
+        };
+        let namespace = event_type_id.namespace.as_deref();
+        if let Some(broker_name) =
+            text_field(&event_type, &["spec", "broker"]).filter(|name| !name.is_empty())
+        {
+            let broker_id = namespaced(EVENTING_API, "Broker", namespace, broker_name);
+            if graph.contains_node(&broker_id) {
+                let mut edge = new_edge(EdgeKind::PublishedBy, event_type_id, &broker_id);
+                insert_text_metadata(&mut edge, "relation", "broker");
+                if let Some(event_type_name) = text_field(&event_type, &["spec", "type"]) {
+                    insert_text_metadata(&mut edge, "type", event_type_name);
+                }
+                add_unique_edge(graph, edge, None);
+            } else {
+                graph.add_warning(warning(
+                    "missing_broker",
+                    format!(
+                        "EventType {} references Broker {broker_name} that is not in the topology",
+                        event_type_id.name
+                    ),
+                    Some(event_type_id.clone()),
+                ));
+            }
+        }
+
+        if let Some(reference) = field(&event_type, &["spec", "reference"]) {
+            let target =
+                reference_id(reference, namespace).filter(|target| graph.contains_node(target));
+            if let Some(target_id) = target {
+                let mut edge = new_edge(EdgeKind::References, event_type_id, &target_id);
+                insert_text_metadata(&mut edge, "relation", "reference");
+                add_unique_edge(graph, edge, None);
+            } else {
+                graph.add_warning(warning(
+                    "link_target_unresolved",
+                    format!(
+                        "EventType {} reference is not in the topology",
+                        event_type_id.name
+                    ),
+                    Some(event_type_id.clone()),
+                ));
+            }
+        }
     }
 }
 

@@ -327,6 +327,10 @@ fn infer_api_version(kind: &str) -> &'static str {
     match kind {
         "Service" | "Route" | "Configuration" | "Revision" => "serving.knative.dev/v1",
         "Broker" | "Trigger" | "EventType" => "eventing.knative.dev/v1",
+        "JobSink" | "IntegrationSink" => "sinks.knative.dev/v1alpha1",
+        "SinkBinding" | "PingSource" | "ApiServerSource" | "ContainerSource" | "KafkaSource" => {
+            "sources.knative.dev/v1"
+        }
         "Deployment" | "ReplicaSet" | "StatefulSet" | "DaemonSet" => "apps/v1",
         "Pod" | "ConfigMap" | "Secret" | "ServiceAccount" => "v1",
         kind if kind.ends_with("Channel") => "messaging.knative.dev/v1",

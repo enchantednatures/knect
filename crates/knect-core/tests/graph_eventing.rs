@@ -13,7 +13,7 @@ use knect_core::store::ResourceStore;
 use knect_proto::graph::{Edge, EdgeKind, Topology};
 use knect_proto::{NodeCategory, ResourceId};
 use kube::api::DynamicObject;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn fixture_path(name: &str) -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -308,6 +308,68 @@ fn kafka_and_rabbitmq_brokers_do_not_get_channels() {
         channel.metadata.get("class").and_then(Value::as_str),
         Some("MTChannelBasedBroker")
     );
+}
+
+#[test]
+fn event_types_and_sinks_are_correlated() {
+    let mut store = load_store();
+    store.upsert(
+        serde_json::from_value(json!({
+            "apiVersion": "eventing.knative.dev/v1",
+            "kind": "EventType",
+            "metadata": { "name": "order.created", "namespace": "knect-e2e" },
+            "spec": {
+                "type": "com.knect.order.created",
+                "source": "/knect/orders",
+                "broker": "mt-broker"
+            }
+        }))
+        .expect("EventType fixture"),
+    );
+    store.upsert(
+        serde_json::from_value(json!({
+            "apiVersion": "sinks.knative.dev/v1alpha1",
+            "kind": "JobSink",
+            "metadata": { "name": "batch-jobs", "namespace": "knect-e2e" },
+            "status": { "address": { "url": "http://batch-jobs.knect-e2e.svc.cluster.local" } }
+        }))
+        .expect("JobSink fixture"),
+    );
+    store.upsert(
+        serde_json::from_value(json!({
+            "apiVersion": "sources.knative.dev/v1",
+            "kind": "PingSource",
+            "metadata": { "name": "job-ping", "namespace": "knect-e2e" },
+            "spec": {
+                "schedule": "* * * * *",
+                "sink": {
+                    "ref": {
+                        "apiVersion": "sinks.knative.dev/v1alpha1",
+                        "kind": "JobSink",
+                        "name": "batch-jobs"
+                    }
+                }
+            }
+        }))
+        .expect("PingSource fixture"),
+    );
+
+    let topology = build_topology(&store);
+    node(&topology, NodeCategory::EventType, "order.created");
+    node(&topology, NodeCategory::Sink, "batch-jobs");
+    node(&topology, NodeCategory::Source, "job-ping");
+
+    let published = edge(
+        &topology,
+        "order.created",
+        "mt-broker",
+        EdgeKind::PublishedBy,
+    );
+    assert_eq!(
+        published.metadata.get("relation").and_then(Value::as_str),
+        Some("broker")
+    );
+    edge(&topology, "job-ping", "batch-jobs", EdgeKind::DeliversTo);
 }
 
 #[test]

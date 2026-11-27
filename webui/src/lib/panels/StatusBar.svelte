@@ -54,9 +54,12 @@
     <Icon path="M4 7h16 M4 12h16 M4 17h16" size={12} />
     {store.status?.context ?? store.graph.context}
   </span>
+  <span class="status-item mono" title="Topology scope">
+    {store.filters.scope === 'knative' ? 'knative scope' : 'all resources'}
+  </span>
   <span class="status-item mono">gen {store.graph.generation}</span>
-  <span class="status-item mono">{store.graph.stats.node_count} nodes</span>
-  <span class="status-item mono">{store.graph.stats.edge_count} edges</span>
+  <span class="status-item mono" title="Visible nodes">{store.visibleNodes.length} nodes</span>
+  <span class="status-item mono" title="Visible edges">{store.visibleEdges.length} edges</span>
   <span class="status-item mono">{store.realtime.policies.length} policies</span>
   <span class="status-spacer"></span>
   <span class="status-item mono" title="Last SSE event">sse {eventAge}</span>

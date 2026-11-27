@@ -41,7 +41,10 @@ Run it without a cluster using the checked-in fixtures:
 ```
 
 The daemon listens on `127.0.0.1:7420` and `/tmp/knectd.sock` by default.
-Open `http://127.0.0.1:7420/` for the embedded WebUI.
+Open `http://127.0.0.1:7420/` for the embedded WebUI. It opens in **Knative
+flows** scope by default: Knative Serving and Eventing resources plus their
+connected runtime, backing, storage, mesh, and policy dependencies. Use the
+**All resources** toggle in the filter rail to see the full cluster.
 
 Connect the TUI:
 
@@ -94,9 +97,10 @@ intentional: guarded write actions require both
 
 ## Status
 
-Unreleased `v1.0.0` release candidate. The daemon, cache,
-topology/correlation engines, TUI, WebUI, `knect.nvim`, container, Helm chart,
-and signed release pipeline are implemented and tested.
+`v1.1.0`. The daemon, cache, topology/correlation engines, TUI, WebUI,
+`knect.nvim`, container, Helm chart, and signed release pipeline are
+implemented and tested. The WebUI opens in Knative-first scope, with EventType
+and Knative sink resources included in the eventing graph.
 
 Known limitation: a cold full-stack Kind setup currently takes about **13
 minutes**, dominated by Knative install and readiness waits. The original

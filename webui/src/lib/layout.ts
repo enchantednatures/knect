@@ -91,10 +91,12 @@ const CATEGORY_ORDER: readonly NodeCategory[] = [
   'secret',
   'broker',
   'trigger',
+  'event_type',
   'source',
   'sink_binding',
   'subscription',
   'channel',
+  'sink',
   'backing_service',
   'topic',
   'storage_class',
@@ -112,6 +114,24 @@ const CATEGORY_ORDER: readonly NodeCategory[] = [
 ];
 
 const CATEGORY_RANK = new Map(CATEGORY_ORDER.map((category, index) => [category, index]));
+
+const EVENTING_CATEGORIES: ReadonlySet<NodeCategory> = new Set<NodeCategory>([
+  'broker',
+  'trigger',
+  'event_type',
+  'source',
+  'sink_binding',
+  'subscription',
+  'channel',
+  'sink',
+]);
+
+const SERVING_CATEGORIES: ReadonlySet<NodeCategory> = new Set<NodeCategory>([
+  'k_service',
+  'route',
+  'configuration',
+  'revision',
+]);
 
 interface LayoutComponent {
   key: string;
@@ -148,6 +168,8 @@ export function computeLayout(
   const positions: Record<string, NodePosition> = {};
 
   const orderedComponents = [...components].sort((left, right) => {
+    const priority = componentPriority(left) - componentPriority(right);
+    if (priority !== 0) return priority;
     const height = right.height - left.height;
     if (height !== 0) return height;
     const width = right.width - left.width;
@@ -174,6 +196,15 @@ export function computeLayout(
     rowHeight = Math.max(rowHeight, component.height);
   }
   return positions;
+}
+
+function componentPriority(component: LayoutComponent): number {
+  let serving = false;
+  for (const node of component.nodes) {
+    if (EVENTING_CATEGORIES.has(node.category)) return 0;
+    if (SERVING_CATEGORIES.has(node.category)) serving = true;
+  }
+  return serving ? 1 : 2;
 }
 
 function compareNodes(left: ResourceNode, right: ResourceNode): number {

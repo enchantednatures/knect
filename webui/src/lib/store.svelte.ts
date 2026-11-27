@@ -2,7 +2,13 @@
 // transport stays testable without a browser.
 
 import { EventStream, browserStorage, type ConnectionState } from './events';
-import { defaultFilters, filterEdges, filterNodes, isFiltered, type FilterState } from './filters';
+import {
+  defaultFilters,
+  filterEdges,
+  isFiltered,
+  visibleTopologyNodes,
+  type FilterState,
+} from './filters';
 import { computeLayout, layoutSignature, nodeSize, type NodePosition } from './layout';
 import { applySseEvent, emptyRealtime, type RealtimeState } from './reducer';
 import { RpcCallError, RpcClient, type RpcClientOptions } from './rpc';
@@ -72,7 +78,9 @@ export class AppStore {
 
   readonly graph = $derived(this.realtime.graph);
   readonly nodes = $derived(this.graph.nodes);
-  readonly visibleNodes = $derived(filterNodes(this.nodes, this.filters));
+  readonly visibleNodes = $derived(
+    visibleTopologyNodes(this.nodes, this.graph.edges, this.filters),
+  );
   readonly visibleEdges = $derived(filterEdges(this.graph.edges, this.visibleNodes));
   readonly selectedNode = $derived.by(() => {
     if (this.selectedKey === null) return null;

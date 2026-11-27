@@ -8,7 +8,7 @@ import {
 } from '../lib/layout';
 import type { Edge } from '../lib/types';
 import { resourceKey } from '../lib/types';
-import { kserviceId, node, revisionId, topology } from './fixtures';
+import { broker, kservice, kserviceId, node, revision, revisionId, topology, trigger } from './fixtures';
 
 describe('graph layout', () => {
   it('is deterministic for the same topology', () => {
@@ -115,6 +115,38 @@ describe('graph layout', () => {
     );
 
     expect(distinct.size).toBe(3);
+  });
+
+  it('packs eventing components before serving components', () => {
+    const edges: Edge[] = [
+      {
+        id: 'edge-trigger-broker',
+        from: trigger.id,
+        to: broker.id,
+        kind: 'subscribes',
+        label: null,
+        health: 'healthy',
+        warnings: [],
+        metadata: {},
+      },
+      {
+        id: 'edge-kservice-revision',
+        from: kservice.id,
+        to: revision.id,
+        kind: 'owns',
+        label: null,
+        health: 'healthy',
+        warnings: [],
+        metadata: {},
+      },
+    ];
+    const positions = computeLayout([broker, trigger, kservice, revision], edges);
+    const eventing = positions[resourceKey(trigger.id)]!;
+    const serving = positions[resourceKey(kservice.id)]!;
+
+    expect(
+      eventing.y < serving.y || (eventing.y === serving.y && eventing.x < serving.x),
+    ).toBe(true);
   });
 
   it('grids a large connected component instead of stacking one rank vertically', () => {

@@ -76,8 +76,8 @@
     <div class="meta">
       <span class="chip chip--neutral mono" title="Kubernetes context">{context}</span>
       <span class="meta-item mono">gen {store.graph.generation}</span>
-      <span class="meta-item mono">{store.graph.stats.node_count} nodes</span>
-      <span class="meta-item mono">{store.graph.stats.edge_count} edges</span>
+      <span class="meta-item mono" title="Visible nodes">{store.visibleNodes.length} nodes</span>
+      <span class="meta-item mono" title="Visible edges">{store.visibleEdges.length} edges</span>
       <span class="chip chip--{connectionTone[store.connection]}" data-testid="topbar-connection">
         <span class="dot" aria-hidden="true"></span>{connectionLabel[store.connection]}
       </span>

@@ -42,6 +42,35 @@
     </button>
   </div>
 
+  <section class="group" aria-labelledby="filters-scope">
+    <h3 id="filters-scope">Scope</h3>
+    <div class="toggle-row">
+      <button
+        class="toggle"
+        class:on={store.filters.scope === 'knative'}
+        type="button"
+        aria-pressed={store.filters.scope === 'knative'}
+        onclick={() => store.setFilter('scope', 'knative')}
+      >
+        Knative flows
+      </button>
+      <button
+        class="toggle"
+        class:on={store.filters.scope === 'all'}
+        type="button"
+        aria-pressed={store.filters.scope === 'all'}
+        onclick={() => store.setFilter('scope', 'all')}
+      >
+        All resources
+      </button>
+    </div>
+    <p class="faint scope-note">
+      {store.filters.scope === 'knative'
+        ? 'Serving and Eventing resources plus their connected runtime, backing, storage, mesh, and policy dependencies.'
+        : 'Every discovered resource in the cluster.'}
+    </p>
+  </section>
+
   <label class="field">
     <span class="field-label">Search</span>
     <span class="search-wrap">
@@ -271,6 +300,12 @@
     color: var(--accent);
     border-color: rgb(56 189 248 / 0.45);
     background: rgb(56 189 248 / 0.08);
+  }
+
+  .scope-note {
+    margin: 7px 0 0;
+    font-size: 10px;
+    line-height: 1.45;
   }
 
   .group h3 {

@@ -1829,7 +1829,7 @@ dependencies = [
 
 [[package]]
 name = "knect-core"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -1864,7 +1864,7 @@ dependencies = [
 
 [[package]]
 name = "knect-e2e"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "clap",
@@ -1878,7 +1878,7 @@ dependencies = [
 
 [[package]]
 name = "knect-proto"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "insta",
@@ -1891,7 +1891,7 @@ dependencies = [
 
 [[package]]
 name = "knect-tui"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "async-stream",
  "axum",
@@ -1917,7 +1917,7 @@ dependencies = [
 
 [[package]]
 name = "knectd"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "async-stream",
